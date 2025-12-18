@@ -1,0 +1,42 @@
+import { Router } from 'express';
+import authRoutes from './authRoutes';
+import agencyRoutes from './agencyRoutes';
+import branchRoutes from './branchRoutes';
+import userRoutes from './userRoutes';
+import customerRoutes from './customerRoutes';
+import vehicleRoutes from './vehicleRoutes';
+import carBrandRoutes from './carBrandRoutes';
+import carModelRoutes from './carModelRoutes';
+import packageRoutes from './packageRoutes';
+import saleRoutes from './saleRoutes';
+import paymentRoutes from './paymentRoutes';
+import commissionRoutes from './commissionRoutes';
+import supportRoutes from './supportRoutes';
+import statsRoutes from './statsRoutes';
+import pdfRoutes from './pdfRoutes';
+
+const router = Router();
+
+// API Routes
+router.use('/auth', authRoutes);
+router.use('/agencies', agencyRoutes);
+router.use('/branches', branchRoutes);
+router.use('/users', userRoutes);
+router.use('/customers', customerRoutes);
+router.use('/vehicles', vehicleRoutes);
+router.use('/car-brands', carBrandRoutes);
+router.use('/car-models', carModelRoutes);
+router.use('/packages', packageRoutes);
+router.use('/sales', saleRoutes);
+router.use('/payments', paymentRoutes);
+router.use('/commissions', commissionRoutes);
+router.use('/support', supportRoutes);
+router.use('/stats', statsRoutes);
+router.use('/pdf', pdfRoutes);
+
+// Health check
+router.get('/health', (req, res) => {
+  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+export default router;
