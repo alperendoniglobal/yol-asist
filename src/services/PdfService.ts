@@ -97,7 +97,13 @@ export class PdfService {
       // Mavi gradient header bandı
       doc.rect(0, 0, 595, 100).fill(this.colors.primary);
       
-      // Logo kutusu - beyaz arka plan üzerinde mavi logo
+      // Acente bilgisini al (logo için)
+      const agency = sale.agency;
+      
+      // Debug: Acente logosu kontrolü
+      console.log('Acente bilgisi:', agency ? { id: agency.id, name: agency.name, hasLogo: !!agency.logo, logoLength: agency.logo?.length } : 'Acente yok');
+      
+      // Sol taraf - Çözüm Asistan logosu kutusu
       doc.roundedRect(30, 15, 200, 70, 5).fill('#fff');
       
       const logoPath = path.join(this.assetsPath, 'cozumasistanlog.svg');
@@ -123,22 +129,67 @@ export class PdfService {
         doc.font(defaultFont).fontSize(9).fillColor(this.colors.textLight).text('Yol Yardım Hizmetleri', 45, 55);
       }
 
+      // Orta - Acente logosu kutusu (eğer varsa)
+      if (agency) {
+        if (agency.logo) {
+          try {
+            // Base64 string'den buffer oluştur
+            let base64Data = agency.logo;
+            // data:image prefix'i varsa kaldır
+            if (base64Data.includes(',')) {
+              base64Data = base64Data.split(',')[1];
+            }
+            const logoBuffer = Buffer.from(base64Data, 'base64');
+            
+            // Acente logosu kutusu
+            doc.roundedRect(250, 15, 80, 70, 5).fill('#fff');
+            
+            // Base64 resmi PDF'e ekle
+            doc.image(logoBuffer, 260, 25, { 
+              width: 60, 
+              height: 50,
+              fit: [60, 50],
+              align: 'center',
+              valign: 'center'
+            });
+            
+            console.log('✅ Acente logosu PDF\'e eklendi');
+          } catch (e) {
+            console.error('❌ Acente logosu ekleme hatası:', e);
+            // Hata durumunda acente adını yaz
+            doc.roundedRect(250, 15, 80, 70, 5).fill('#fff');
+            doc.font(defaultFont).fontSize(8).fillColor(this.colors.text)
+               .text(agency.name || 'Acente', 255, 40, { width: 70, align: 'center' });
+          }
+        } else {
+          // Logo yoksa acente adını göster
+          console.log('⚠️ Acente logosu yok, acente adı gösteriliyor');
+          doc.roundedRect(250, 15, 80, 70, 5).fill('#fff');
+          doc.font(defaultFont).fontSize(8).fillColor(this.colors.text)
+             .text(agency.name || 'Acente', 255, 40, { width: 70, align: 'center' });
+        }
+      }
+
       // Sağ üst köşe - Satış bilgileri kutusu
-      doc.roundedRect(350, 15, 205, 70, 5).fill('#fff');
+      // Acente logosu varsa daha sağa, yoksa normal pozisyonda
+      const salesInfoX = (agency && agency.logo) ? 340 : 350;
+      const salesInfoWidth = (agency && agency.logo) ? 215 : 205;
+      
+      doc.roundedRect(salesInfoX, 15, salesInfoWidth, 70, 5).fill('#fff');
       doc.font(boldFont).fontSize(9).fillColor(this.colors.primary)
-         .text('SATIŞ BİLGİLERİ', 360, 22);
+         .text('SATIŞ BİLGİLERİ', salesInfoX + 10, 22);
       doc.font(defaultFont).fontSize(8).fillColor(this.colors.text);
-      doc.text(`Satış No: ${sale.id.slice(0, 8).toUpperCase()}`, 360, 38);
-      doc.text(`Tanzim: ${this.formatDate(sale.created_at)}`, 360, 50);
-      doc.text(`Başlangıç: ${this.formatDate(sale.start_date)}`, 360, 62);
-      doc.text(`Bitiş: ${this.formatDate(sale.end_date)}`, 460, 62);
+      doc.text(`Satış No: ${sale.id.slice(0, 8).toUpperCase()}`, salesInfoX + 10, 38);
+      doc.text(`Tanzim: ${this.formatDate(sale.created_at)}`, salesInfoX + 10, 50);
+      doc.text(`Başlangıç: ${this.formatDate(sale.start_date)}`, salesInfoX + 10, 62);
+      doc.text(`Bitiş: ${this.formatDate(sale.end_date)}`, salesInfoX + 110, 62);
 
       y = 115;
 
       // ==================== ANA İÇERİK ====================
       const customer = sale.customer;
       const vehicle = sale.vehicle;
-      const agency = sale.agency;
+      // agency zaten yukarıda tanımlı (satır 101)
       const branch = sale.branch;
       const user = sale.user;
       const pkg = sale.package;

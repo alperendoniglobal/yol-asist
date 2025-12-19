@@ -22,7 +22,21 @@ export class BranchService {
       .leftJoinAndSelect('branch.agency', 'agency');
 
     if (filter) {
-      applyTenantFilter(queryBuilder, filter, 'branch');
+      // Agency filtresi uygula
+      if (filter.agency_id) {
+        queryBuilder.andWhere('branch.agency_id = :agency_id', {
+          agency_id: filter.agency_id,
+        });
+      }
+
+      // Branch filtresi uygula
+      // Not: branches tablosu için branch_id yerine id kullanılmalı
+      // Çünkü branches tablosunda branch_id kolonu yok, sadece id var
+      if (filter.branch_id) {
+        queryBuilder.andWhere('branch.id = :branch_id', {
+          branch_id: filter.branch_id,
+        });
+      }
     }
 
     const branches = await queryBuilder.getMany();
@@ -287,7 +301,21 @@ export class BranchService {
       .leftJoinAndSelect('branch.agency', 'agency');
 
     if (filter) {
-      applyTenantFilter(queryBuilder, filter, 'branch');
+      // Agency filtresi uygula
+      if (filter.agency_id) {
+        queryBuilder.andWhere('branch.agency_id = :agency_id', {
+          agency_id: filter.agency_id,
+        });
+      }
+
+      // Branch filtresi uygula
+      // Not: branches tablosu için branch_id yerine id kullanılmalı
+      // Çünkü branches tablosunda branch_id kolonu yok, sadece id var
+      if (filter.branch_id) {
+        queryBuilder.andWhere('branch.id = :branch_id', {
+          branch_id: filter.branch_id,
+        });
+      }
     }
 
     const branches = await queryBuilder.getMany();

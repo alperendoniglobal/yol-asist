@@ -11,8 +11,10 @@ export class UserController {
   }
 
   // Tum kullanicilari getir (silinmemis olanlar)
+  // Şube yöneticisi sadece kendi şubesindeki kullanıcıları görebilir
+  // Acente yöneticisi acenteki tüm kullanıcıları görebilir
   getAll = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-    const users = await this.userService.getAll(req.tenantFilter);
+    const users = await this.userService.getAll(req.tenantFilter, req.user);
     successResponse(res, users, 'Kullanicilar basariyla getirildi');
   });
 

@@ -63,6 +63,10 @@ export class Agency {
   @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
   balance: number;
 
+  // Logo - Base64 formatında kaydedilir (LONGTEXT - 4GB'a kadar)
+  @Column({ type: 'longtext', nullable: true })
+  logo: string | null;
+
   @CreateDateColumn()
   created_at: Date;
 

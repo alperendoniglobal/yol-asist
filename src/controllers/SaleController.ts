@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { SaleService } from '../services/SaleService';
 import { asyncHandler } from '../middlewares/errorHandler';
 import { successResponse } from '../utils/response';
+import { UserRole } from '../types/enums';
 
 export class SaleController {
   private saleService: SaleService;
@@ -12,13 +13,35 @@ export class SaleController {
 
   getAll = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const sales = await this.saleService.getAll(req.tenantFilter);
-    successResponse(res, sales, 'Sales retrieved successfully');
+    
+    // BRANCH_USER rolündeki kullanıcılar komisyon bilgisini göremez
+    // Komisyon bilgisini response'dan çıkar
+    // Sadece Super Admin, Agency Admin ve Branch Admin komisyonu görebilir
+    const filteredSales = sales.map(sale => {
+      if (req.user?.role === UserRole.BRANCH_USER) {
+        const { commission, ...saleWithoutCommission } = sale;
+        return saleWithoutCommission;
+      }
+      return sale;
+    });
+    
+    successResponse(res, filteredSales, 'Sales retrieved successfully');
   });
 
   getById = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
     const sale = await this.saleService.getById(id);
-    successResponse(res, sale, 'Sale retrieved successfully');
+    
+    // BRANCH_USER rolündeki kullanıcılar komisyon bilgisini göremez
+    // Komisyon bilgisini response'dan çıkar
+    // Sadece Super Admin, Agency Admin ve Branch Admin komisyonu görebilir
+    let filteredSale = sale;
+    if (req.user?.role === UserRole.BRANCH_USER) {
+      const { commission, ...saleWithoutCommission } = sale;
+      filteredSale = saleWithoutCommission as any;
+    }
+    
+    successResponse(res, filteredSale, 'Sale retrieved successfully');
   });
 
   create = asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -56,7 +79,16 @@ export class SaleController {
     };
 
     const result = await this.saleService.completeSale(completeSaleInput);
-    successResponse(res, result, 'Satış başarıyla tamamlandı', 201);
+    
+    // BRANCH_USER rolündeki kullanıcılar komisyon bilgisini göremez
+    // Komisyon bilgisini response'dan çıkar
+    let filteredResult = result;
+    if (req.user?.role === UserRole.BRANCH_USER) {
+      const { commission, ...resultWithoutCommission } = result;
+      filteredResult = resultWithoutCommission as any;
+    }
+    
+    successResponse(res, filteredResult, 'Satış başarıyla tamamlandı', 201);
   });
 
   update = asyncHandler(async (req: Request, res: Response): Promise<void> => {

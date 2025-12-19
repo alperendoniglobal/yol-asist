@@ -5,7 +5,7 @@ import { Customer } from '../entities/Customer';
 import { AppError } from '../middlewares/errorHandler';
 import { applyTenantFilter } from '../middlewares/tenantMiddleware';
 import { hashPassword } from '../utils/hash';
-import { EntityStatus } from '../types/enums';
+import { EntityStatus, UserRole } from '../types/enums';
 
 export class UserService {
   private userRepository = AppDataSource.getRepository(User);
@@ -13,7 +13,9 @@ export class UserService {
   private customerRepository = AppDataSource.getRepository(Customer);
 
   // Tum kullanicilari getir (silinen kullanicilar haric)
-  async getAll(filter?: any) {
+  // Şube yöneticisi sadece kendi şubesindeki kullanıcıları görebilir (acente yöneticisini göremez)
+  // Acente yöneticisi acenteki tüm kullanıcıları görebilir
+  async getAll(filter?: any, currentUser?: User) {
     const queryBuilder = this.userRepository
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.agency', 'agency')
@@ -38,6 +40,17 @@ export class UserService {
 
     if (filter) {
       applyTenantFilter(queryBuilder, filter, 'user');
+    }
+
+    // Şube yöneticisi için özel filtreleme:
+    // - Sadece kendi şubesindeki kullanıcıları görebilir
+    // - Acente yöneticisini (AGENCY_ADMIN) göremez
+    // - Sadece kendi şubesindeki BRANCH_USER ve BRANCH_ADMIN'leri görebilir
+    if (currentUser && currentUser.role === UserRole.BRANCH_ADMIN && currentUser.branch_id) {
+      // Şube yöneticisi sadece kendi şubesindeki kullanıcıları görebilir
+      queryBuilder.andWhere('user.branch_id = :branchId', { branchId: currentUser.branch_id });
+      // Acente yöneticisini görmemeli (AGENCY_ADMIN rolünü filtrele)
+      queryBuilder.andWhere('user.role != :agencyAdminRole', { agencyAdminRole: UserRole.AGENCY_ADMIN });
     }
 
     const users = await queryBuilder.getMany();
