@@ -110,11 +110,11 @@ export class SaleService {
   /**
    * Satış için komisyon oranını hesaplar
    * Öncelik: 1. Şube komisyonu, 2. Acente komisyonu
-   * @param branchId - Şube ID (opsiyonel)
-   * @param agencyId - Acente ID
+   * @param branchId - Şube ID (opsiyonel, null olabilir)
+   * @param agencyId - Acente ID (opsiyonel, null olabilir)
    * @returns Komisyon oranı (%)
    */
-  async getCommissionRate(branchId: string | null, agencyId: string): Promise<number> {
+  async getCommissionRate(branchId: string | null, agencyId: string | null): Promise<number> {
     // Şube varsa şube komisyonunu kullan
     if (branchId) {
       const branch = await this.branchRepository.findOne({ where: { id: branchId } });
@@ -124,12 +124,14 @@ export class SaleService {
     }
     
     // Şube yoksa veya şube komisyonu yoksa acente komisyonunu kullan
-    const agency = await this.agencyRepository.findOne({ where: { id: agencyId } });
-    if (agency) {
-      return Number(agency.commission_rate);
+    if (agencyId) {
+      const agency = await this.agencyRepository.findOne({ where: { id: agencyId } });
+      if (agency) {
+        return Number(agency.commission_rate);
+      }
     }
     
-    // Varsayılan %20
+    // Varsayılan %20 (şube ve acente yoksa)
     return 20;
   }
 
@@ -146,8 +148,9 @@ export class SaleService {
   // Yeni satış oluştur
   async create(data: Partial<Sale>) {
     // Komisyon otomatik hesaplanmamışsa hesapla
-    if (data.commission === undefined && data.price && data.agency_id) {
-      const commissionRate = await this.getCommissionRate(data.branch_id || null, data.agency_id);
+    // Şube veya acente olmasa bile komisyon hesaplanabilir (varsayılan %20)
+    if (data.commission === undefined && data.price) {
+      const commissionRate = await this.getCommissionRate(data.branch_id || null, data.agency_id || null);
       data.commission = this.calculateCommission(Number(data.price), commissionRate);
     }
     
@@ -287,9 +290,10 @@ export class SaleService {
       }
 
       // Komisyon hesapla (eğer gönderilmemişse)
+      // Şube veya acente olmasa bile komisyon hesaplanabilir (varsayılan %20)
       let commission = input.sale.commission;
-      if (commission === undefined && input.agency_id) {
-        const commissionRate = await this.getCommissionRate(input.branch_id || null, input.agency_id);
+      if (commission === undefined) {
+        const commissionRate = await this.getCommissionRate(input.branch_id || null, input.agency_id || null);
         commission = this.calculateCommission(Number(input.sale.price), commissionRate);
       }
 
