@@ -180,7 +180,15 @@ export class UserService {
   }
 
   // Yeni kullanici olustur
-  async create(data: Partial<User>) {
+  // SUPPORT rolü sadece SUPER_ADMIN tarafından oluşturulabilir
+  async create(data: Partial<User>, currentUser?: User) {
+    // SUPPORT rolü kontrolü: Sadece SUPER_ADMIN SUPPORT rolü oluşturabilir
+    if (data.role === UserRole.SUPPORT) {
+      if (!currentUser || currentUser.role !== UserRole.SUPER_ADMIN) {
+        throw new AppError(403, 'SUPPORT rolü sadece SUPER_ADMIN tarafından oluşturulabilir');
+      }
+    }
+
     const existingUser = await this.userRepository.findOne({
       where: { email: data.email },
     });
@@ -219,13 +227,22 @@ export class UserService {
   }
 
   // Kullanici guncelle
-  async update(id: string, data: Partial<User>) {
+  // SUPPORT rolü sadece SUPER_ADMIN tarafından atanabilir
+  async update(id: string, data: Partial<User>, currentUser?: User) {
     const user = await this.userRepository.findOne({ 
       where: { id, is_deleted: false } 
     });
 
     if (!user) {
       throw new AppError(404, 'Kullanici bulunamadi');
+    }
+
+    // SUPPORT rolü kontrolü: Sadece SUPER_ADMIN SUPPORT rolü atayabilir
+    // Eğer kullanıcı zaten SUPPORT ise ve başka bir role değiştirilmeye çalışılıyorsa, yine SUPER_ADMIN olmalı
+    if (data.role === UserRole.SUPPORT || user.role === UserRole.SUPPORT) {
+      if (!currentUser || currentUser.role !== UserRole.SUPER_ADMIN) {
+        throw new AppError(403, 'SUPPORT rolü sadece SUPER_ADMIN tarafından atanabilir veya değiştirilebilir');
+      }
     }
 
     if (data.email && data.email !== user.email) {

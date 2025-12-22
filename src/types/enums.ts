@@ -2,7 +2,8 @@ export enum UserRole {
   SUPER_ADMIN = 'SUPER_ADMIN',
   AGENCY_ADMIN = 'AGENCY_ADMIN',
   BRANCH_ADMIN = 'BRANCH_ADMIN',
-  BRANCH_USER = 'BRANCH_USER'
+  BRANCH_USER = 'BRANCH_USER',
+  SUPPORT = 'SUPPORT' // Destek ekibi - Sadece SUPER_ADMIN oluşturabilir
 }
 
 export enum EntityStatus {

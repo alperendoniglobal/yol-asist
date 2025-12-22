@@ -34,15 +34,17 @@ export class UserController {
   });
 
   // Yeni kullanici olustur
+  // SUPPORT rolü sadece SUPER_ADMIN tarafından oluşturulabilir
   create = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-    const user = await this.userService.create(req.body);
+    const user = await this.userService.create(req.body, req.user);
     successResponse(res, user, 'Kullanici basariyla olusturuldu', 201);
   });
 
   // Kullanici guncelle
+  // SUPPORT rolü sadece SUPER_ADMIN tarafından atanabilir veya değiştirilebilir
   update = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
-    const user = await this.userService.update(id, req.body);
+    const user = await this.userService.update(id, req.body, req.user);
     successResponse(res, user, 'Kullanici basariyla guncellendi');
   });
 

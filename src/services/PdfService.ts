@@ -11,7 +11,7 @@ const SVGtoPDF = require('svg-to-pdfkit');
 
 /**
  * PDF Oluşturma Servisi - Modern Tasarım
- * Satış tamamlandıktan sonra profesyonel poliçe belgesi oluşturur
+ * Satış tamamlandıktan sonra profesyonel sözleşme belgesi oluşturur
  */
 export class PdfService {
   private saleRepository = AppDataSource.getRepository(Sale);
@@ -37,7 +37,7 @@ export class PdfService {
   };
 
   /**
-   * Satış için PDF poliçe belgesi oluşturur
+   * Satış için PDF sözleşme belgesi oluşturur
    */
   async generateSaleContract(saleId: string): Promise<Buffer> {
     const sale = await this.saleRepository.findOne({
@@ -103,8 +103,14 @@ export class PdfService {
       // Debug: Acente logosu kontrolü
       console.log('Acente bilgisi:', agency ? { id: agency.id, name: agency.name, hasLogo: !!agency.logo, logoLength: agency.logo?.length } : 'Acente yok');
       
+      // Sol üst köşe - 7/24 Çağrı Destek (Mavi arka plan üzerine beyaz yazı)
+      doc.font(boldFont).fontSize(10).fillColor('#fff')
+         .text('7/24 ÇAĞRI DESTEK', 40, 8);
+      doc.font(defaultFont).fontSize(9).fillColor('#fff')
+         .text('+90 (850) 304 54 40', 40, 20);
+      
       // Sol taraf - Çözüm Asistan logosu kutusu
-      doc.roundedRect(30, 15, 200, 70, 5).fill('#fff');
+      doc.roundedRect(30, 35, 200, 60, 5).fill('#fff');
       
       const logoPath = path.join(this.assetsPath, 'cozumasistanlog.svg');
       let logoDrawn = false;
@@ -114,7 +120,7 @@ export class PdfService {
           const svgContent = fs.readFileSync(logoPath, 'utf8');
           // Logo rengini maviye çevir (#fff -> #1e40af)
           const svgBlue = svgContent.replace(/fill:\s*#fff/g, 'fill: #1e40af');
-          SVGtoPDF(doc, svgBlue, 40, 25, { width: 180, height: 50 });
+          SVGtoPDF(doc, svgBlue, 40, 45, { width: 180, height: 45 });
           logoDrawn = true;
           console.log('Logo SVG çizildi (mavi)');
         } catch (e) {
@@ -125,8 +131,8 @@ export class PdfService {
       
       // Logo çizilemezse metin olarak yaz
       if (!logoDrawn) {
-        doc.font(boldFont).fontSize(20).fillColor(this.colors.primary).text('ÇÖZÜM ASİSTAN', 45, 30);
-        doc.font(defaultFont).fontSize(9).fillColor(this.colors.textLight).text('Yol Yardım Hizmetleri', 45, 55);
+        doc.font(boldFont).fontSize(18).fillColor(this.colors.primary).text('ÇÖZÜM ASİSTAN', 45, 50);
+        doc.font(defaultFont).fontSize(8).fillColor(this.colors.textLight).text('Yol Yardım Hizmetleri', 45, 70);
       }
 
       // Orta - Acente logosu kutusu (eğer varsa)
@@ -142,13 +148,13 @@ export class PdfService {
             const logoBuffer = Buffer.from(base64Data, 'base64');
             
             // Acente logosu kutusu
-            doc.roundedRect(250, 15, 80, 70, 5).fill('#fff');
+            doc.roundedRect(250, 35, 80, 60, 5).fill('#fff');
             
             // Base64 resmi PDF'e ekle
-            doc.image(logoBuffer, 260, 25, { 
+            doc.image(logoBuffer, 260, 45, { 
               width: 60, 
-              height: 50,
-              fit: [60, 50],
+              height: 45,
+              fit: [60, 45],
               align: 'center',
               valign: 'center'
             });
@@ -157,32 +163,41 @@ export class PdfService {
           } catch (e) {
             console.error('❌ Acente logosu ekleme hatası:', e);
             // Hata durumunda acente adını yaz
-            doc.roundedRect(250, 15, 80, 70, 5).fill('#fff');
+            doc.roundedRect(250, 35, 80, 60, 5).fill('#fff');
             doc.font(defaultFont).fontSize(8).fillColor(this.colors.text)
-               .text(agency.name || 'Acente', 255, 40, { width: 70, align: 'center' });
+               .text(agency.name || 'Acente', 255, 60, { width: 70, align: 'center' });
           }
         } else {
           // Logo yoksa acente adını göster
           console.log('⚠️ Acente logosu yok, acente adı gösteriliyor');
-          doc.roundedRect(250, 15, 80, 70, 5).fill('#fff');
+          doc.roundedRect(250, 35, 80, 60, 5).fill('#fff');
           doc.font(defaultFont).fontSize(8).fillColor(this.colors.text)
-             .text(agency.name || 'Acente', 255, 40, { width: 70, align: 'center' });
+             .text(agency.name || 'Acente', 255, 60, { width: 70, align: 'center' });
         }
       }
-
+      
       // Sağ üst köşe - Satış bilgileri kutusu
       // Acente logosu varsa daha sağa, yoksa normal pozisyonda
       const salesInfoX = (agency && agency.logo) ? 340 : 350;
       const salesInfoWidth = (agency && agency.logo) ? 215 : 205;
+      const salesInfoHeight = 80; // Yüksekliği artırdık (4 satır için)
       
-      doc.roundedRect(salesInfoX, 15, salesInfoWidth, 70, 5).fill('#fff');
+      doc.roundedRect(salesInfoX, 35, salesInfoWidth, salesInfoHeight, 5).fill('#fff');
       doc.font(boldFont).fontSize(9).fillColor(this.colors.primary)
-         .text('SATIŞ BİLGİLERİ', salesInfoX + 10, 22);
-      doc.font(defaultFont).fontSize(8).fillColor(this.colors.text);
-      doc.text(`Satış No: ${sale.id.slice(0, 8).toUpperCase()}`, salesInfoX + 10, 38);
-      doc.text(`Tanzim: ${this.formatDate(sale.created_at)}`, salesInfoX + 10, 50);
-      doc.text(`Başlangıç: ${this.formatDate(sale.start_date)}`, salesInfoX + 10, 62);
-      doc.text(`Bitiş: ${this.formatDate(sale.end_date)}`, salesInfoX + 110, 62);
+         .text('SATIŞ BİLGİLERİ', salesInfoX + 10, 42);
+      doc.font(defaultFont).fontSize(7.5).fillColor(this.colors.text);
+      doc.text(`Satış No: ${sale.id.slice(0, 8).toUpperCase()}`, salesInfoX + 10, 55);
+      // Tanzim tarihi: Satışın gerçekleştiği tarih (sale.created_at) - PDF oluşturulma tarihi değil!
+      // sale.created_at zaten bir Date objesi veya string olabilir, güvenli şekilde parse ediyoruz
+      const tanzimDate = sale.created_at instanceof Date 
+        ? sale.created_at 
+        : sale.created_at 
+          ? new Date(sale.created_at) 
+          : new Date();
+      doc.text(`Tanzim: ${this.formatDateTime(tanzimDate)}`, salesInfoX + 10, 66);
+      // Başlangıç ve bitiş tarihlerini alt alta yaz
+      doc.text(`Başlangıç: ${this.formatDateTime(new Date(sale.start_date))}`, salesInfoX + 10, 77);
+      doc.text(`Bitiş: ${this.formatDateTime(new Date(sale.end_date))}`, salesInfoX + 10, 88);
 
       y = 115;
 
@@ -253,12 +268,12 @@ export class PdfService {
 
       y += 145;
 
-      // ---------- ACENTE BİLGİLERİ KARTI ----------
-      this.drawCard(doc, col1X, y, cardWidth, 85, 'ACENTE BİLGİLERİ', boldFont);
+      // ---------- KAYNAK BİLGİLERİ KARTI ----------
+      this.drawCard(doc, col1X, y, cardWidth, 85, 'KAYNAK BİLGİLERİ', boldFont);
       cardY = y + 30;
       
       if (agency) {
-        this.drawFieldInline(doc, col1X + 10, cardY, 'Acente', agency.name, defaultFont);
+        this.drawFieldInline(doc, col1X + 10, cardY, 'Kaynak', agency.name, defaultFont);
         cardY += 15;
       }
       if (branch) {
@@ -350,12 +365,18 @@ export class PdfService {
       doc.font(defaultFont).fontSize(9).fillColor(this.colors.text);
 
       const terms = [
+        { title: 'HİZMET TANIMLARI', items: [
+          'Kaza Durumunda: Aracın bir kaza sonucu hareketsiz kalması durumunda yürür hale getirilmesi ya da en yakın servis/tamirhaneye götürülmesi için gerekli organizasyon sağlanacaktır. (Limitler dahilinde)',
+          'Aracın Arızalanması Durumunda: Aracın hareketsiz kalmasına yol açan veya güvenli sürüşü engelleyen arıza durumunda, en yakın servise/tamirhaneye çekim sağlanır. (Limitler dahilinde)',
+          'Lastik Patlaması: Aracın sağlıklı sürüşünü etkileyen bir lastik hasarı sonucu en yakın lastikçiye götürülmesi için gerekli organizasyon sağlanacaktır. (Limitler dahilinde)',
+          'Yakıt Bitmesi/Şarj Bitmesi: Fosil yakıtlı araçlarda yakıt bitmesi ya da elektrik motorlu araçlarda pil bitmesi sonucu hareketsiz kalması sonucu en yakın ilgili istasyona çekim sağlanır. (Limitler dahilinde)',
+        ]},
         { title: 'GENEL ŞARTLAR', items: [
-          'Hizmetimiz Türkiye genelinde 7/24 sağlanmaktadır.',
-          'Sözleşmenin ilk sayfasında belirtilen limit ve süreler dahilinde hizmet verilir.',
-          'Sözleşme yürürlüğe giriş tarihinden itibaren 5 gün sonra geçerli olacaktır.',
-          'Hizmetten yararlanacak müşterinin aracı arıza veya kaza nedeni ile ikinci kez çekici hizmeti aynı kaza ya da arıza için verilemeyecektir.',
-          'Her çekici hizmet hakkı farklı çekim sebebi olması halinde kullanılabilecektir.',
+          'a) Hizmetlerden yalnızca çağrı merkezimize iletilen talepler kapsamında destek sağlanacaktır. Hizmet kullanım ön şartı YALNIZCA 0850 123 45 67 Numaralı ÇÖZÜM ASİSTAN çağrı merkezine gelen taleplere destek verilecektir. Çağrı merkezine gelmeyen faturalı talepleri kapsam dışıdır.',
+          'b) Sözleşmenin ilk sayfasında belirtilen limitler dahilinde çekme/kurtarma işlemi en yakın servis/tamirhaneye kadar çekim hizmeti verilir.',
+          'c) Teminat limit aşımları ve bu aşımdan kaynaklı köprü/otoyol/otopark ücretleri sigortalı tarafından karşılanır.',
+          'd) Aracın emtia (yükünden) dolayı çekme/kurtarma işlemi yapılamıyorsa yükün boşaltılmasından ÇÖZÜM ASİSTAN firması sorumlu değildir. Ancak araçta bulunan Emtia ile çekme/kurtarma teknik olarak mümkünse sigortalının yazılı onayı ile çekim yapılacaktır ve bu çekimden dolayı emtia ve araçta oluşabilecek hasarlardan "ÇÖZÜM ASİSTAN" sorumlu değildir.',
+          'e) Ağır ticari araç gruplarında her durumda sadece motorlu araç(kupa) için hizmet verilir.',
         ]},
         { title: 'ARAÇ YARDIM HİZMETLERİ', items: [
           'Arıza veya kaza anında aracın çekilmesi hizmeti',
@@ -367,11 +388,16 @@ export class PdfService {
           'Mazot ve motor donması, aracın karlı ve yağışlı havalarda yolda ilerleyemiyor olması',
           'Müşterinin oto tamirhane dışındaki başka bir adrese çekim talepleri',
           'Römork, Treyler, Dorse vb eklentilere teminat verilmeyecektir',
+          'a) Yurtdışında çekme/kurtarma hizmeti kullanılamaz',
+          'b) Aynı olayda birden fazla çekici hizmeti kullanılamaz',
+          'c) Coğrafi şartlardan dolayı çekme/kurtarma mümkün değilse hizmet talebi kapsam dışıdır',
+          'd) Sel, deprem, volkanik patlama, fırtına, terör, isyan, ayaklanma, savaş ve halk hareketleri sonucu oluşacak talepler hizmet kapsamı dışındadır',
         ]},
-        { title: 'İPTAL VE İADE', items: [
-          'Sözleşme 14 gün içerisinde iptal edilebilir',
-          'Karttan tahsil edilen miktar, banka tahsilat komisyonu kesilerek karta iade edilir',
-          'Hizmetten yararlanmış olan sözleşmelerde iptal iade işlemi yapılmaz',
+        { title: 'SÖZLEŞME İPTAL ŞARTLARI', items: [
+          'a) Sözleşme 7 gün içerisinde başlangıcından iptal edilebilir',
+          'b) 7 günden sonra gelen iptal taleplerinde banka tahsilat komisyonu kesilerek gün esaslı iptal yapılır',
+          'c) Sözleşme süresi içerisinde 3 ve üzerinde çekim talebi gelmesi durumunda sözleşme primsiz olarak otomatik iptal edilir',
+          'd) Herhangi bir hizmet kullanımı olan sözleşmelerde iptal talebi gelmesi durumunda prim iadesi yapılmaz',
         ]},
       ];
 
@@ -384,11 +410,26 @@ export class PdfService {
         // Bölüm içeriği
         doc.font(defaultFont).fontSize(8).fillColor(this.colors.text);
         for (const item of section.items) {
-          const textHeight = doc.heightOfString(`• ${item}`, { width: pageWidth });
+          const textHeight = doc.heightOfString(`• ${item}`, { width: pageWidth - 20 });
           doc.text(`• ${item}`, 50, y, { width: pageWidth - 20 });
           y += textHeight + 4;
         }
+        
+        // KAPSAM DIŞI DURUMLAR ve SÖZLEŞME İPTAL ŞARTLARI bölümlerinin sonuna özel metin ekle
+        if (section.title === 'KAPSAM DIŞI DURUMLAR' || section.title === 'SÖZLEŞME İPTAL ŞARTLARI') {
+          y += 8;
+          doc.font(defaultFont).fontSize(8).fillColor(this.colors.text)
+             .text('Yukarıdaki maddeler sözleşme tarafları arasında peşinen kabul edilmiştir.', 50, y, { width: pageWidth - 20 });
+          y += 12;
+        }
+        
         y += 12;
+        
+        // Sayfa sonu kontrolü - eğer sayfa doluyorsa yeni sayfa ekle
+        if (y > 750) {
+          doc.addPage();
+          y = 40;
+        }
       }
 
       // ==================== FOOTER ====================

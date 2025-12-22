@@ -9,7 +9,7 @@ export const AppDataSource = new DataSource({
   password: process.env.DB_PASSWORD || 'root',
   database: process.env.DB_NAME || 'yol_asistan',
   synchronize: process.env.NODE_ENV === 'development', // Only true in development
-  logging: process.env.NODE_ENV === 'development',
+  logging: false,
   entities: [path.join(__dirname, '../entities/**/*.{ts,js}')],
   migrations: [path.join(__dirname, '../database/migrations/**/*.{ts,js}')],
   subscribers: [],

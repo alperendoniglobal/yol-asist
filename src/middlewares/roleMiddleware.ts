@@ -22,14 +22,17 @@ export const roleMiddleware = (allowedRoles: UserRole[]) => {
 
 // Convenience middleware for specific roles
 export const superAdminOnly = roleMiddleware([UserRole.SUPER_ADMIN]);
-export const agencyAdminOrAbove = roleMiddleware([UserRole.SUPER_ADMIN, UserRole.AGENCY_ADMIN]);
+export const supportOrAbove = roleMiddleware([UserRole.SUPER_ADMIN, UserRole.SUPPORT]);
+export const agencyAdminOrAbove = roleMiddleware([UserRole.SUPER_ADMIN, UserRole.SUPPORT, UserRole.AGENCY_ADMIN]);
 export const branchAdminOrAbove = roleMiddleware([
   UserRole.SUPER_ADMIN,
+  UserRole.SUPPORT,
   UserRole.AGENCY_ADMIN,
   UserRole.BRANCH_ADMIN,
 ]);
 export const allRoles = roleMiddleware([
   UserRole.SUPER_ADMIN,
+  UserRole.SUPPORT,
   UserRole.AGENCY_ADMIN,
   UserRole.BRANCH_ADMIN,
   UserRole.BRANCH_USER,

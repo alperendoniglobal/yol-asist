@@ -4,6 +4,7 @@ import { UserRole } from '../types/enums';
 /**
  * Multi-tenancy middleware that automatically filters data based on user role:
  * - SUPER_ADMIN: No filter (can see all data)
+ * - SUPPORT: No filter (can see all data - global support role)
  * - AGENCY_ADMIN: Filter by agency_id
  * - BRANCH_ADMIN: Filter by agency_id + branch_id
  * - BRANCH_USER: Filter by agency_id + branch_id + created_by
@@ -24,6 +25,10 @@ export const tenantMiddleware = (
   switch (req.user.role) {
     case UserRole.SUPER_ADMIN:
       // SUPER_ADMIN can see all data - no filter applied
+      break;
+
+    case UserRole.SUPPORT:
+      // SUPPORT can see all data - no filter applied (global support role)
       break;
 
     case UserRole.AGENCY_ADMIN:
