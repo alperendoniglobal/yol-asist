@@ -5,6 +5,7 @@ import { Sale } from '../entities/Sale';
 import { AppDataSource } from '../config/database';
 import { Package } from '../entities/Package';
 import { PackageCover } from '../entities/PackageCover';
+import { VehicleService } from './VehicleService';
 
 // SVG to PDFKit için
 const SVGtoPDF = require('svg-to-pdfkit');
@@ -17,6 +18,7 @@ export class PdfService {
   private saleRepository = AppDataSource.getRepository(Sale);
   private packageRepository = AppDataSource.getRepository(Package);
   private coverRepository = AppDataSource.getRepository(PackageCover);
+  private vehicleService = new VehicleService();
 
   // Font ve asset yolları
   private fontPath = path.join(process.cwd(), 'src/assets/fonts');
@@ -42,11 +44,16 @@ export class PdfService {
   async generateSaleContract(saleId: string): Promise<Buffer> {
     const sale = await this.saleRepository.findOne({
       where: { id: saleId },
-      relations: ['customer', 'vehicle', 'package', 'agency', 'branch', 'user', 'vehicle.brand', 'vehicle.model'],
+      relations: ['customer', 'vehicle', 'package', 'agency', 'branch', 'user', 'vehicle.brand', 'vehicle.model', 'vehicle.motorBrand', 'vehicle.motorModel'],
     });
 
     if (!sale) {
       throw new Error('Satış bulunamadı');
+    }
+
+    // Vehicle'ı normalize et - brand ve model her zaman gelsin
+    if (sale.vehicle) {
+      sale.vehicle = this.vehicleService.normalizeVehicle(sale.vehicle) as any;
     }
 
     const covers = await this.coverRepository.find({
@@ -372,26 +379,21 @@ export class PdfService {
           'Yakıt Bitmesi/Şarj Bitmesi: Fosil yakıtlı araçlarda yakıt bitmesi ya da elektrik motorlu araçlarda pil bitmesi sonucu hareketsiz kalması sonucu en yakın ilgili istasyona çekim sağlanır. (Limitler dahilinde)',
         ]},
         { title: 'GENEL ŞARTLAR', items: [
-          'a) Hizmetlerden yalnızca çağrı merkezimize iletilen talepler kapsamında destek sağlanacaktır. Hizmet kullanım ön şartı YALNIZCA 0850 123 45 67 Numaralı ÇÖZÜM ASİSTAN çağrı merkezine gelen taleplere destek verilecektir. Çağrı merkezine gelmeyen faturalı talepleri kapsam dışıdır.',
+          'Hizmetlerden yalnızca çağrı merkezimize iletilen taleplere destek sağlanacaktır.',
           'b) Sözleşmenin ilk sayfasında belirtilen limitler dahilinde çekme/kurtarma işlemi en yakın servis/tamirhaneye kadar çekim hizmeti verilir.',
-          'c) Teminat limit aşımları ve bu aşımdan kaynaklı köprü/otoyol/otopark ücretleri sigortalı tarafından karşılanır.',
+          'c) Paket limit aşımları ve bu aşımdan kaynaklı köprü/otoyol/otopark ücretleri sigortalı tarafından karşılanır.',
           'd) Aracın emtia (yükünden) dolayı çekme/kurtarma işlemi yapılamıyorsa yükün boşaltılmasından ÇÖZÜM ASİSTAN firması sorumlu değildir. Ancak araçta bulunan Emtia ile çekme/kurtarma teknik olarak mümkünse sigortalının yazılı onayı ile çekim yapılacaktır ve bu çekimden dolayı emtia ve araçta oluşabilecek hasarlardan "ÇÖZÜM ASİSTAN" sorumlu değildir.',
           'e) Ağır ticari araç gruplarında her durumda sadece motorlu araç(kupa) için hizmet verilir.',
-        ]},
-        { title: 'ARAÇ YARDIM HİZMETLERİ', items: [
-          'Arıza veya kaza anında aracın çekilmesi hizmeti',
-          'Aracın devrilme veya şarampole yuvarlanma nedeniyle hareketsiz kalması durumunda kurtarma hizmeti',
-          'Çekme ve kurtarma hizmetleri bölgede anlaşmalı çekici/kurtarıcı firmaların imkanları ölçüsünde sağlanacaktır',
         ]},
         { title: 'KAPSAM DIŞI DURUMLAR', items: [
           'Aracın çamura saplanması, farlarının aydınlatmaması, cam silgiclerinin çalışmaması',
           'Mazot ve motor donması, aracın karlı ve yağışlı havalarda yolda ilerleyemiyor olması',
           'Müşterinin oto tamirhane dışındaki başka bir adrese çekim talepleri',
           'Römork, Treyler, Dorse vb eklentilere teminat verilmeyecektir',
-          'a) Yurtdışında çekme/kurtarma hizmeti kullanılamaz',
-          'b) Aynı olayda birden fazla çekici hizmeti kullanılamaz',
-          'c) Coğrafi şartlardan dolayı çekme/kurtarma mümkün değilse hizmet talebi kapsam dışıdır',
-          'd) Sel, deprem, volkanik patlama, fırtına, terör, isyan, ayaklanma, savaş ve halk hareketleri sonucu oluşacak talepler hizmet kapsamı dışındadır',
+          'Yurtdışında çekme/kurtarma hizmeti kullanılamaz',
+          'Aynı olayda birden fazla çekici hizmeti kullanılamaz',
+          'Coğrafi şartlardan dolayı çekme/kurtarma mümkün değilse hizmet talebi kapsam dışıdır',
+          'Sel, deprem, volkanik patlama, fırtına, terör, isyan, ayaklanma, savaş ve halk hareketleri sonucu oluşacak talepler hizmet kapsamı dışındadır',
         ]},
         { title: 'SÖZLEŞME İPTAL ŞARTLARI', items: [
           'a) Sözleşme 7 gün içerisinde başlangıcından iptal edilebilir',

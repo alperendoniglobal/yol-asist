@@ -165,26 +165,44 @@ export class CreateSupportFiles1702200000005 implements MigrationInterface {
       true
     );
 
-    // Foreign keys
-    await queryRunner.createForeignKey(
-      'support_files',
-      new TableForeignKey({
-        columnNames: ['sale_id'],
-        referencedColumnNames: ['id'],
-        referencedTableName: 'sales',
-        onDelete: 'CASCADE',
-      })
-    );
+    // Foreign keys - Manuel isimler vererek duplicate constraint hatasını önliyoruz
+    // Constraint'in zaten var olup olmadığını kontrol et
+    const table = await queryRunner.getTable('support_files');
+    const existingForeignKeys = table?.foreignKeys || [];
 
-    await queryRunner.createForeignKey(
-      'support_files',
-      new TableForeignKey({
-        columnNames: ['created_by'],
-        referencedColumnNames: ['id'],
-        referencedTableName: 'users',
-        onDelete: 'SET NULL',
-      })
+    // sale_id foreign key'i kontrol et ve ekle
+    const saleFkExists = existingForeignKeys.some(
+      fk => fk.columnNames.includes('sale_id') && fk.referencedTableName === 'sales'
     );
+    if (!saleFkExists) {
+      await queryRunner.createForeignKey(
+        'support_files',
+        new TableForeignKey({
+          name: 'FK_support_files_sale_id', // Manuel isim veriyoruz
+          columnNames: ['sale_id'],
+          referencedColumnNames: ['id'],
+          referencedTableName: 'sales',
+          onDelete: 'CASCADE',
+        })
+      );
+    }
+
+    // created_by foreign key'i kontrol et ve ekle
+    const createdByFkExists = existingForeignKeys.some(
+      fk => fk.columnNames.includes('created_by') && fk.referencedTableName === 'users'
+    );
+    if (!createdByFkExists) {
+      await queryRunner.createForeignKey(
+        'support_files',
+        new TableForeignKey({
+          name: 'FK_support_files_created_by', // Manuel isim veriyoruz
+          columnNames: ['created_by'],
+          referencedColumnNames: ['id'],
+          referencedTableName: 'users',
+          onDelete: 'SET NULL',
+        })
+      );
+    }
 
     // Index for damage_file_number (unique)
     await queryRunner.createIndex(

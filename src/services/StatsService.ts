@@ -27,6 +27,16 @@ export class StatsService {
       applyTenantFilter(customersQb, filter, 'customer');
     }
 
+    // Komisyon hesaplaması: Şube yöneticisi için branch_commission, Acente admin için agency_commission, diğerleri için toplam commission
+    let commissionColumn = 'sale.commission'; // Varsayılan: toplam komisyon
+    if (filter && filter.branch_id) {
+      // Şube yöneticisi: sadece kendi şubesinin komisyonunu görür
+      commissionColumn = 'COALESCE(sale.branch_commission, 0)';
+    } else if (filter && filter.agency_id && !filter.branch_id) {
+      // Acente admin: acente komisyonunu görür (şube komisyonu hariç)
+      commissionColumn = 'COALESCE(sale.agency_commission, sale.commission, 0)';
+    }
+
     const [
       totalSales,
       totalCustomers,
@@ -36,7 +46,7 @@ export class StatsService {
       salesQb.getCount(),
       customersQb.getCount(),
       salesQb.clone().select('SUM(sale.price)', 'total').getRawOne(),
-      salesQb.clone().select('SUM(sale.commission)', 'total').getRawOne(),
+      salesQb.clone().select(`SUM(${commissionColumn})`, 'total').getRawOne(),
     ]);
 
     // Son satışları getir

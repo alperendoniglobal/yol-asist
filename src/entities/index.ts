@@ -18,3 +18,5 @@ export { LandingPageBanner } from './LandingPageBanner';
 export { LandingPageFeature } from './LandingPageFeature';
 export { LandingPageStat } from './LandingPageStat';
 export { PageContent } from './PageContent';
+export { MotorBrand } from './MotorBrand';
+export { MotorModel } from './MotorModel';

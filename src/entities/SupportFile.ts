@@ -5,7 +5,8 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
-  JoinColumn
+  JoinColumn,
+  Index
 } from 'typeorm';
 import { Sale } from './Sale';
 import { User } from './User';
@@ -16,6 +17,7 @@ import { User } from './User';
  * Bir satışın birden fazla hasar dosyası olabilir
  */
 @Entity('support_files')
+@Index('IDX_support_files_sale_id', ['sale_id']) // Migration ile uyumlu index
 export class SupportFile {
   @PrimaryGeneratedColumn('uuid')
   id: string;

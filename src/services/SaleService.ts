@@ -10,6 +10,7 @@ import { AppError } from '../middlewares/errorHandler';
 import { applyTenantFilter } from '../middlewares/tenantMiddleware';
 import { PaymentType, PaymentStatus, UsageType, UserRole } from '../types/enums';
 import { SmsService } from './SmsService';
+import { VehicleService } from './VehicleService';
 
 // Komple satış için input tipi
 interface CompleteSaleInput {
@@ -30,12 +31,15 @@ interface CompleteSaleInput {
   };
   // Araç bilgileri
   vehicle: {
+    vehicle_type: string; // Araç tipi: Otomobil, Motosiklet, vs.
     is_foreign_plate: boolean;
     plate: string;
     registration_serial?: string;
     registration_number?: string;
-    brand_id: number;
-    model_id: number;
+    brand_id?: number; // Otomobil için
+    model_id?: number; // Otomobil için
+    motor_brand_id?: number; // Motosiklet için
+    motor_model_id?: number; // Motosiklet için
     model_year: number;
     usage_type: string;
   };
@@ -72,6 +76,7 @@ export class SaleService {
   private vehicleRepository = AppDataSource.getRepository(Vehicle);
   private paymentRepository = AppDataSource.getRepository(Payment);
   private packageRepository = AppDataSource.getRepository(Package);
+  private vehicleService = new VehicleService();
 
   /**
    * Satış numarası oluştur
@@ -98,6 +103,8 @@ export class SaleService {
       .leftJoinAndSelect('sale.vehicle', 'vehicle')
       .leftJoinAndSelect('vehicle.brand', 'brand')
       .leftJoinAndSelect('vehicle.model', 'model')
+      .leftJoinAndSelect('vehicle.motorBrand', 'motorBrand')
+      .leftJoinAndSelect('vehicle.motorModel', 'motorModel')
       .leftJoinAndSelect('sale.package', 'package')
       .leftJoinAndSelect('sale.agency', 'agency')
       .leftJoinAndSelect('sale.branch', 'branch')
@@ -139,7 +146,13 @@ export class SaleService {
     }
 
     const sales = await queryBuilder.getMany();
-    return sales;
+    // Vehicle'ları normalize et - brand ve model her zaman gelsin
+    return sales.map(sale => {
+      if (sale.vehicle) {
+        sale.vehicle = this.vehicleService.normalizeVehicle(sale.vehicle) as Vehicle;
+      }
+      return sale;
+    });
   }
 
   // Excel export için satışları getir (tarih aralığı + tenant filter)
@@ -150,6 +163,8 @@ export class SaleService {
       .leftJoinAndSelect('sale.vehicle', 'vehicle')
       .leftJoinAndSelect('vehicle.brand', 'brand')
       .leftJoinAndSelect('vehicle.model', 'model')
+      .leftJoinAndSelect('vehicle.motorBrand', 'motorBrand')
+      .leftJoinAndSelect('vehicle.motorModel', 'motorModel')
       .leftJoinAndSelect('sale.package', 'package')
       .leftJoinAndSelect('sale.agency', 'agency')
       .leftJoinAndSelect('sale.branch', 'branch')
@@ -169,7 +184,14 @@ export class SaleService {
       queryBuilder.andWhere('sale.created_at <= :endDate', { endDate: `${endDate} 23:59:59` });
     }
 
-    return await queryBuilder.getMany();
+    const sales = await queryBuilder.getMany();
+    // Vehicle'ları normalize et - brand ve model her zaman gelsin
+    return sales.map(sale => {
+      if (sale.vehicle) {
+        sale.vehicle = this.vehicleService.normalizeVehicle(sale.vehicle) as Vehicle;
+      }
+      return sale;
+    });
   }
 
   // ID ile satış getir
@@ -180,6 +202,8 @@ export class SaleService {
       .leftJoinAndSelect('sale.vehicle', 'vehicle')
       .leftJoinAndSelect('vehicle.brand', 'brand')
       .leftJoinAndSelect('vehicle.model', 'model')
+      .leftJoinAndSelect('vehicle.motorBrand', 'motorBrand')
+      .leftJoinAndSelect('vehicle.motorModel', 'motorModel')
       .leftJoinAndSelect('sale.package', 'package')
       .leftJoinAndSelect('sale.agency', 'agency')
       .leftJoinAndSelect('sale.branch', 'branch')
@@ -190,6 +214,11 @@ export class SaleService {
 
     if (!sale) {
       throw new AppError(404, 'Sale not found');
+    }
+
+    // Vehicle'ı normalize et - brand ve model her zaman gelsin
+    if (sale.vehicle) {
+      sale.vehicle = this.vehicleService.normalizeVehicle(sale.vehicle) as Vehicle;
     }
 
     return sale;
@@ -452,34 +481,61 @@ export class SaleService {
         where: { plate: input.vehicle.plate.toUpperCase() }
       });
 
+      // Motosiklet mi otomobil mi kontrol et
+      const isMotorcycle = input.vehicle.vehicle_type === 'Motosiklet';
+
       if (vehicle) {
         // Mevcut araç - bilgilerini güncelle
-        Object.assign(vehicle, {
+        const updateData: any = {
           customer_id: customer.id,
+          vehicle_type: input.vehicle.vehicle_type,
           is_foreign_plate: input.vehicle.is_foreign_plate,
           registration_serial: input.vehicle.registration_serial?.toUpperCase() || null,
           registration_number: input.vehicle.registration_number || null,
-          brand_id: input.vehicle.brand_id,
-          model_id: input.vehicle.model_id,
           model_year: input.vehicle.model_year,
           usage_type: input.vehicle.usage_type,
-        });
+        };
+
+        // Motosiklet için motor_brand_id ve motor_model_id, otomobil için brand_id ve model_id kullan
+        if (isMotorcycle) {
+          updateData.motor_brand_id = input.vehicle.motor_brand_id || null;
+          updateData.motor_model_id = input.vehicle.motor_model_id || null;
+          updateData.brand_id = null; // Otomobil kolonlarını temizle
+          updateData.model_id = null;
+        } else {
+          updateData.brand_id = input.vehicle.brand_id || null;
+          updateData.model_id = input.vehicle.model_id || null;
+          updateData.motor_brand_id = null; // Motosiklet kolonlarını temizle
+          updateData.motor_model_id = null;
+        }
+
+        Object.assign(vehicle, updateData);
         vehicle = await queryRunner.manager.save(vehicle);
       } else {
         // Yeni araç oluştur
-        const newVehicle = queryRunner.manager.create(Vehicle, {
+        const vehicleData: any = {
           customer_id: customer.id,
           agency_id: input.agency_id || undefined,  // null yerine undefined kullan
           branch_id: input.branch_id || undefined,
+          vehicle_type: input.vehicle.vehicle_type,
           is_foreign_plate: input.vehicle.is_foreign_plate,
           plate: input.vehicle.plate.toUpperCase(),
           registration_serial: input.vehicle.registration_serial?.toUpperCase() || undefined,
           registration_number: input.vehicle.registration_number || undefined,
-          brand_id: input.vehicle.brand_id,
-          model_id: input.vehicle.model_id,
           model_year: input.vehicle.model_year,
           usage_type: input.vehicle.usage_type as UsageType,  // string'i enum'a cast et
-        });
+        };
+
+        // Motosiklet için motor_brand_id ve motor_model_id, otomobil için brand_id ve model_id kullan
+        if (isMotorcycle) {
+          vehicleData.motor_brand_id = input.vehicle.motor_brand_id || undefined;
+          vehicleData.motor_model_id = input.vehicle.motor_model_id || undefined;
+        } else {
+          vehicleData.brand_id = input.vehicle.brand_id || undefined;
+          vehicleData.model_id = input.vehicle.model_id || undefined;
+        }
+
+        const newVehicle = queryRunner.manager.create(Vehicle, vehicleData);
         vehicle = await queryRunner.manager.save(newVehicle);
       }
 
