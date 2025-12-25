@@ -41,7 +41,15 @@ export class AgencyService {
     return agency;
   }
 
+  // Yeni acente olustur
+  // Eger balance belirtilmemisse otomatik olarak 100000 TL bakiye atanir
   async create(data: Partial<Agency>) {
+    // Balance belirtilmemisse otomatik olarak 100000 TL set et
+    // Bu sayede her yeni acente 100000 TL bakiye ile baslar
+    if (data.balance === undefined || data.balance === null) {
+      data.balance = 100000;
+    }
+
     const agency = this.agencyRepository.create(data);
     await this.agencyRepository.save(agency);
     return agency;
