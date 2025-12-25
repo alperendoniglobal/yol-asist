@@ -6,6 +6,36 @@ import { applyAgencyFilter } from '../middlewares/tenantMiddleware';
 export class VehicleService {
   private vehicleRepository = AppDataSource.getRepository(Vehicle);
 
+  /**
+   * Vehicle'ı normalize et - brand ve model'i vehicle_type'a göre doldur
+   * Frontend ve PDF gibi yerlerde her zaman brand ve model gelsin
+   */
+  normalizeVehicle(vehicle: Vehicle): any {
+    if (!vehicle) return vehicle;
+
+    const isMotorcycle = vehicle.vehicle_type === 'Motosiklet';
+    
+    // Normalize edilmiş vehicle objesi oluştur
+    const normalized: any = {
+      ...vehicle,
+      // brand ve model'i vehicle_type'a göre doldur
+      brand: isMotorcycle ? vehicle.motorBrand : vehicle.brand,
+      model: isMotorcycle ? vehicle.motorModel : vehicle.model,
+      // Orijinal ID'leri de ekle (gerekirse)
+      brand_id: isMotorcycle ? vehicle.motor_brand_id : vehicle.brand_id,
+      model_id: isMotorcycle ? vehicle.motor_model_id : vehicle.model_id,
+    };
+
+    return normalized;
+  }
+
+  /**
+   * Birden fazla vehicle'ı normalize et
+   */
+  private normalizeVehicles(vehicles: Vehicle[]): any[] {
+    return vehicles.map(v => this.normalizeVehicle(v));
+  }
+
   // Araçları listele (tenant filter ile)
   // Not: Vehicle entity'sinde created_by kolonu yok, sadece agency_id ve branch_id ile filtreliyoruz
   async getAll(filter?: any) {
@@ -16,6 +46,8 @@ export class VehicleService {
       .leftJoinAndSelect('vehicle.branch', 'branch')
       .leftJoinAndSelect('vehicle.brand', 'brand')
       .leftJoinAndSelect('vehicle.model', 'model')
+      .leftJoinAndSelect('vehicle.motorBrand', 'motorBrand') // Motosiklet markası
+      .leftJoinAndSelect('vehicle.motorModel', 'motorModel') // Motosiklet modeli
       .orderBy('vehicle.created_at', 'DESC');
 
     if (filter) {
@@ -28,21 +60,23 @@ export class VehicleService {
     }
 
     const vehicles = await queryBuilder.getMany();
-    return vehicles;
+    // Normalize et - brand ve model her zaman gelsin
+    return this.normalizeVehicles(vehicles);
   }
 
   // ID ile araç getir
   async getById(id: string) {
     const vehicle = await this.vehicleRepository.findOne({
       where: { id },
-      relations: ['customer', 'agency', 'branch', 'brand', 'model'],
+      relations: ['customer', 'agency', 'branch', 'brand', 'model', 'motorBrand', 'motorModel'],
     });
 
     if (!vehicle) {
       throw new AppError(404, 'Vehicle not found');
     }
 
-    return vehicle;
+    // Normalize et - brand ve model her zaman gelsin
+    return this.normalizeVehicle(vehicle);
   }
 
   // Yeni araç oluştur
@@ -98,18 +132,21 @@ export class VehicleService {
   async getByCustomer(customerId: string) {
     const vehicles = await this.vehicleRepository.find({
       where: { customer_id: customerId },
-      relations: ['customer'],
+      relations: ['customer', 'brand', 'model', 'motorBrand', 'motorModel'],
     });
-    return vehicles;
+    // Normalize et - brand ve model her zaman gelsin
+    return this.normalizeVehicles(vehicles);
   }
 
   // Plakaya göre araç bul
   async findByPlate(plate: string) {
     const vehicle = await this.vehicleRepository.findOne({
       where: { plate: plate.toUpperCase() },
-      relations: ['customer', 'agency', 'branch', 'brand', 'model'],
+      relations: ['customer', 'agency', 'branch', 'brand', 'model', 'motorBrand', 'motorModel'],
     });
-    return vehicle;
+    if (!vehicle) return null;
+    // Normalize et - brand ve model her zaman gelsin
+    return this.normalizeVehicle(vehicle);
   }
 
   // Araç bul veya oluştur (satış akışı için)
@@ -121,12 +158,12 @@ export class VehicleService {
     // Mevcut araç var mı kontrol et
     const existingVehicle = await this.vehicleRepository.findOne({
       where: { plate },
-      relations: ['customer', 'agency', 'branch', 'brand', 'model'],
+      relations: ['customer', 'agency', 'branch', 'brand', 'model', 'motorBrand', 'motorModel'],
     });
 
     if (existingVehicle) {
-      // Mevcut aracı döndür
-      return { vehicle: existingVehicle, isNew: false };
+      // Mevcut aracı normalize et ve döndür
+      return { vehicle: this.normalizeVehicle(existingVehicle), isNew: false };
     }
 
     // Yeni araç oluştur
@@ -136,9 +173,10 @@ export class VehicleService {
     // İlişkilerle birlikte tekrar çek
     const savedVehicle = await this.vehicleRepository.findOne({
       where: { id: vehicle.id },
-      relations: ['customer', 'agency', 'branch', 'brand', 'model'],
+      relations: ['customer', 'agency', 'branch', 'brand', 'model', 'motorBrand', 'motorModel'],
     });
 
-    return { vehicle: savedVehicle!, isNew: true };
+    // Normalize et ve döndür
+    return { vehicle: this.normalizeVehicle(savedVehicle!), isNew: true };
   }
 }

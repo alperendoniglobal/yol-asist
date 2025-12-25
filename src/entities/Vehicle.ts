@@ -15,6 +15,8 @@ import { Branch } from './Branch';
 import { Sale } from './Sale';
 import { CarBrand } from './CarBrand';
 import { CarModel } from './CarModel';
+import { MotorBrand } from './MotorBrand';
+import { MotorModel } from './MotorModel';
 
 @Entity('vehicles')
 export class Vehicle {
@@ -45,11 +47,23 @@ export class Vehicle {
   @Column({ type: 'varchar', length: 20, nullable: true, comment: 'Ruhsat No' })
   registration_number: string | null;
 
+  // Araç tipi (Otomobil, Motosiklet, Minibüs, vs.)
+  @Column({ type: 'varchar', length: 50, nullable: true, comment: 'Araç tipi: Otomobil, Motosiklet, Minibüs, vs.' })
+  vehicle_type: string | null;
+
+  // Otomobil için marka ve model
   @Column({ type: 'int', nullable: true })
   brand_id: number | null;
 
   @Column({ type: 'int', nullable: true })
   model_id: number | null;
+
+  // Motosiklet için marka ve model
+  @Column({ type: 'int', nullable: true, comment: 'Motosiklet marka ID (motor_brands tablosundan)' })
+  motor_brand_id: number | null;
+
+  @Column({ type: 'int', nullable: true, comment: 'Motosiklet model ID (motor_models tablosundan)' })
+  motor_model_id: number | null;
 
   @Column({ type: 'int' })
   model_year: number;
@@ -83,6 +97,7 @@ export class Vehicle {
   @OneToMany(() => Sale, sale => sale.vehicle)
   sales: Sale[];
 
+  // Otomobil ilişkileri
   @ManyToOne(() => CarBrand, { onDelete: 'RESTRICT', nullable: true })
   @JoinColumn({ name: 'brand_id' })
   brand: CarBrand | null;
@@ -90,4 +105,13 @@ export class Vehicle {
   @ManyToOne(() => CarModel, { onDelete: 'RESTRICT', nullable: true })
   @JoinColumn({ name: 'model_id' })
   model: CarModel | null;
+
+  // Motosiklet ilişkileri
+  @ManyToOne(() => MotorBrand, { onDelete: 'RESTRICT', nullable: true })
+  @JoinColumn({ name: 'motor_brand_id' })
+  motorBrand: MotorBrand | null;
+
+  @ManyToOne(() => MotorModel, { onDelete: 'RESTRICT', nullable: true })
+  @JoinColumn({ name: 'motor_model_id' })
+  motorModel: MotorModel | null;
 }
