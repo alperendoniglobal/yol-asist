@@ -6,39 +6,65 @@ import { MigrationInterface, QueryRunner, TableColumn } from 'typeorm';
  */
 export class AddAccountInfoToAgencyAndBranch1702200000004 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // Acentelere hesap bilgileri ekle
-    await queryRunner.addColumn('agencies', new TableColumn({
-      name: 'account_name',
-      type: 'varchar',
-      length: '255',
-      isNullable: true,
-      comment: 'Banka hesap adı'
-    }));
+    // Mevcut kolonları kontrol et (duplicate önlemek için)
+    const agenciesTable = await queryRunner.getTable('agencies');
+    const branchesTable = await queryRunner.getTable('branches');
+    const agenciesColumns = agenciesTable?.columns.map(col => col.name) || [];
+    const branchesColumns = branchesTable?.columns.map(col => col.name) || [];
 
-    await queryRunner.addColumn('agencies', new TableColumn({
-      name: 'iban',
-      type: 'varchar',
-      length: '34',
-      isNullable: true,
-      comment: 'Uluslararası Banka Hesap Numarası (IBAN)'
-    }));
+    // Acentelere hesap bilgileri ekle - sadece yoksa
+    if (!agenciesColumns.includes('account_name')) {
+      await queryRunner.addColumn('agencies', new TableColumn({
+        name: 'account_name',
+        type: 'varchar',
+        length: '255',
+        isNullable: true,
+        comment: 'Banka hesap adı'
+      }));
+      console.log('✅ agencies.account_name kolonu eklendi.');
+    } else {
+      console.log('⚠️ agencies.account_name kolonu zaten mevcut, atlandı.');
+    }
 
-    // Şubelere hesap bilgileri ekle
-    await queryRunner.addColumn('branches', new TableColumn({
-      name: 'account_name',
-      type: 'varchar',
-      length: '255',
-      isNullable: true,
-      comment: 'Banka hesap adı'
-    }));
+    if (!agenciesColumns.includes('iban')) {
+      await queryRunner.addColumn('agencies', new TableColumn({
+        name: 'iban',
+        type: 'varchar',
+        length: '34',
+        isNullable: true,
+        comment: 'Uluslararası Banka Hesap Numarası (IBAN)'
+      }));
+      console.log('✅ agencies.iban kolonu eklendi.');
+    } else {
+      console.log('⚠️ agencies.iban kolonu zaten mevcut, atlandı.');
+    }
 
-    await queryRunner.addColumn('branches', new TableColumn({
-      name: 'iban',
-      type: 'varchar',
-      length: '34',
-      isNullable: true,
-      comment: 'Uluslararası Banka Hesap Numarası (IBAN)'
-    }));
+    // Şubelere hesap bilgileri ekle - sadece yoksa
+    if (!branchesColumns.includes('account_name')) {
+      await queryRunner.addColumn('branches', new TableColumn({
+        name: 'account_name',
+        type: 'varchar',
+        length: '255',
+        isNullable: true,
+        comment: 'Banka hesap adı'
+      }));
+      console.log('✅ branches.account_name kolonu eklendi.');
+    } else {
+      console.log('⚠️ branches.account_name kolonu zaten mevcut, atlandı.');
+    }
+
+    if (!branchesColumns.includes('iban')) {
+      await queryRunner.addColumn('branches', new TableColumn({
+        name: 'iban',
+        type: 'varchar',
+        length: '34',
+        isNullable: true,
+        comment: 'Uluslararası Banka Hesap Numarası (IBAN)'
+      }));
+      console.log('✅ branches.iban kolonu eklendi.');
+    } else {
+      console.log('⚠️ branches.iban kolonu zaten mevcut, atlandı.');
+    }
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
