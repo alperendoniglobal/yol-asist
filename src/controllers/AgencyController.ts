@@ -43,4 +43,10 @@ export class AgencyController {
     const stats = await this.agencyService.getStats(id);
     successResponse(res, stats, 'Agency stats retrieved successfully');
   });
+
+  getBranchCommissionDistribution = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { id } = req.params;
+    const distribution = await this.agencyService.getBranchCommissionDistribution(id);
+    successResponse(res, distribution, 'Komisyon dağılım raporu başarıyla getirildi');
+  });
 }

@@ -10,6 +10,7 @@ import { seedCustomers } from './05-customers.seed';
 import { seedVehicles } from './06-vehicles.seed';
 import { seedSales } from './07-sales.seed';
 import { seedPayments } from './08-payments.seed';
+import { seedContent } from './09-content.seed';
 
 async function runSeeds() {
   console.log('🌱 Starting database seeding...\n');
@@ -58,6 +59,10 @@ async function runSeeds() {
 
     console.log('💳 Seeding Payments...');
     await seedPayments();
+    console.log('');
+
+    console.log('📄 Seeding Content...');
+    await seedContent();
     console.log('');
 
     console.log('✅ Database seeding completed successfully!');

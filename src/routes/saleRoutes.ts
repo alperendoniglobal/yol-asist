@@ -12,6 +12,7 @@ router.use(tenantMiddleware);
 // CRUD operations
 router.get('/', saleController.getAll);
 router.get('/stats', saleController.getStats);
+router.get('/export', allRoles, saleController.export);
 router.get('/:id', saleController.getById);
 router.post('/', allRoles, saleController.create);
 router.put('/:id', allRoles, saleController.update);

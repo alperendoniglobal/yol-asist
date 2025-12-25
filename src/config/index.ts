@@ -23,9 +23,7 @@ export const config = {
   cors: {
     // CORS origin ayarları - birden fazla origin'i destekler
     // Virgülle ayrılmış string veya tek bir origin kabul eder
-    origin: process.env.CORS_ORIGIN 
-      ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
-      : '*',
+    origin: '*',
     credentials: true,
   },
 

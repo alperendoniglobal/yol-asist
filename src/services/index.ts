@@ -10,3 +10,5 @@ export { PaymentService } from './PaymentService';
 export { CommissionService } from './CommissionService';
 export { SupportService } from './SupportService';
 export { StatsService } from './StatsService';
+export { ContentService } from './ContentService';
+export { SmsService } from './SmsService';

@@ -9,6 +9,7 @@ const authController = new AuthController();
 router.post('/login', authController.login);
 router.post('/register', authController.register);
 router.post('/refresh-token', authController.refreshToken);
+router.post('/forgot-password', authController.forgotPassword);
 
 // Protected routes
 router.use(authMiddleware);

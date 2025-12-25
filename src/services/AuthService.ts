@@ -4,6 +4,7 @@ import { hashPassword, comparePassword } from '../utils/hash';
 import { generateAccessToken, generateRefreshToken, verifyToken } from '../utils/jwt';
 import { AppError } from '../middlewares/errorHandler';
 import { EntityStatus } from '../types/enums';
+import { SmsService } from './SmsService';
 
 export class AuthService {
   private userRepository = AppDataSource.getRepository(User);
@@ -151,5 +152,72 @@ export class AuthService {
       ...userWithoutPassword,
       is_active: user.status === EntityStatus.ACTIVE,
     };
+  }
+
+  /**
+   * Şifre sıfırlama işlemi
+   * E-posta ile kullanıcı bulunur, yeni geçici şifre oluşturulur ve SMS ile gönderilir
+   */
+  async forgotPassword(email: string) {
+    const user = await this.userRepository.findOne({
+      where: { email },
+    });
+
+    if (!user) {
+      // Güvenlik nedeniyle kullanıcı bulunamadığında da başarılı mesajı döndür
+      return { message: 'Eğer bu e-posta adresine kayıtlı bir hesap varsa, şifre sıfırlama bilgileri gönderildi.' };
+    }
+
+    if (user.status !== EntityStatus.ACTIVE) {
+      throw new AppError(403, 'Hesap aktif değil');
+    }
+
+    // 8 karakterlik geçici şifre oluştur (büyük harf, küçük harf, rakam)
+    const tempPassword = this.generateTempPassword(8);
+    const hashedPassword = await hashPassword(tempPassword);
+
+    // Şifreyi güncelle
+    user.password = hashedPassword;
+    await this.userRepository.save(user);
+
+    // SMS gönderme işlemi (hata durumunda ana işlemi etkilememeli)
+    if (user.phone) {
+      try {
+        const smsService = new SmsService();
+        const smsMessage = `Merhaba ${user.name}${user.surname ? ' ' + user.surname : ''}, şifre sıfırlama talebiniz alındı. Yeni geçici şifreniz: ${tempPassword}. Lütfen giriş yaptıktan sonra şifrenizi değiştirin. 7/24 Destek: 0850 304 54 40`;
+        await smsService.sendSingleSms(user.phone, smsMessage);
+      } catch (error: any) {
+        // SMS gönderme hatası ana işlemi etkilememeli, sadece log yaz
+        console.error('SMS gönderme hatası (şifre sıfırlama):', error.message);
+      }
+    }
+
+    return { message: 'Şifre sıfırlama bilgileri gönderildi.' };
+  }
+
+  /**
+   * Geçici şifre oluştur
+   * @param length - Şifre uzunluğu
+   * @returns Rastgele şifre
+   */
+  private generateTempPassword(length: number): string {
+    const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+    const numbers = '0123456789';
+    const allChars = uppercase + lowercase + numbers;
+
+    let password = '';
+    // En az bir büyük harf, bir küçük harf ve bir rakam içermeli
+    password += uppercase[Math.floor(Math.random() * uppercase.length)];
+    password += lowercase[Math.floor(Math.random() * lowercase.length)];
+    password += numbers[Math.floor(Math.random() * numbers.length)];
+
+    // Kalan karakterleri rastgele ekle
+    for (let i = password.length; i < length; i++) {
+      password += allChars[Math.floor(Math.random() * allChars.length)];
+    }
+
+    // Karakterleri karıştır
+    return password.split('').sort(() => Math.random() - 0.5).join('');
   }
 }

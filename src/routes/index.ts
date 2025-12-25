@@ -12,8 +12,10 @@ import saleRoutes from './saleRoutes';
 import paymentRoutes from './paymentRoutes';
 import commissionRoutes from './commissionRoutes';
 import supportRoutes from './supportRoutes';
+import supportFileRoutes from './supportFileRoutes';
 import statsRoutes from './statsRoutes';
 import pdfRoutes from './pdfRoutes';
+import contentRoutes from './contentRoutes';
 
 const router = Router();
 
@@ -31,8 +33,10 @@ router.use('/sales', saleRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/commissions', commissionRoutes);
 router.use('/support', supportRoutes);
+router.use('/support-files', supportFileRoutes);
 router.use('/stats', statsRoutes);
 router.use('/pdf', pdfRoutes);
+router.use('/content', contentRoutes);
 
 // Health check
 router.get('/health', (req, res) => {

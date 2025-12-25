@@ -67,6 +67,14 @@ export class Agency {
   @Column({ type: 'longtext', nullable: true })
   logo: string | null;
 
+  // Hesap adı - Banka hesap adı
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  account_name: string | null;
+
+  // IBAN - Uluslararası Banka Hesap Numarası (max 34 karakter)
+  @Column({ type: 'varchar', length: 34, nullable: true })
+  iban: string | null;
+
   @CreateDateColumn()
   created_at: Date;
 

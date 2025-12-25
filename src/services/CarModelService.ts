@@ -24,10 +24,8 @@ export class CarModelService {
       relations: ['brand'],
     });
 
-    if (!model) {
-      throw new AppError(404, 'Car model not found');
-    }
-
+    // Model bulunamazsa null döndür, hata fırlatma
+    // Frontend'de model null ise boş bırakılacak
     return model;
   }
 

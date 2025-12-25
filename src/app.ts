@@ -2,9 +2,11 @@ import express, { Application } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import path from 'path';
 import { config } from './config';
 import routes from './routes';
 import { errorHandler } from './middlewares';
+import { staticFilesPath } from './middlewares/uploadMiddleware';
 import logger from './utils/logger';
 
 const app: Application = express();
@@ -18,6 +20,9 @@ app.use(cors(config.cors));
 // Body parser
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Static files (uploads)
+app.use('/uploads', express.static(staticFilesPath));
 
 // Logging
 if (config.nodeEnv === 'development') {

@@ -15,6 +15,7 @@ import { Branch } from './Branch';
 import { User } from './User';
 import { Package } from './Package';
 import { Payment } from './Payment';
+import { SupportFile } from './SupportFile';
 
 @Entity('sales')
 export class Sale {
@@ -45,6 +46,15 @@ export class Sale {
 
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   commission: number;
+
+  // Dağılımlı komisyon alanları
+  // Şube komisyonu (TL) - Şube varsa şube kendi komisyonunu alır
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  branch_commission: number | null;
+
+  // Acente komisyonu (TL) - Şube varsa kalan kısım (acente komisyonu - şube komisyonu), yoksa tamamı
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  agency_commission: number | null;
 
   @Column({ type: 'date' })
   start_date: Date;
@@ -109,4 +119,8 @@ export class Sale {
 
   @OneToMany(() => Payment, payment => payment.sale)
   payments: Payment[];
+
+  // Bu satışa ait hasar dosyaları (destek ekibi tarafından oluşturulan)
+  @OneToMany(() => SupportFile, file => file.sale, { cascade: true })
+  supportFiles: SupportFile[];
 }

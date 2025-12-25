@@ -8,7 +8,8 @@ import { Payment } from '../entities/Payment';
 import { Package } from '../entities/Package';
 import { AppError } from '../middlewares/errorHandler';
 import { applyTenantFilter } from '../middlewares/tenantMiddleware';
-import { PaymentType, PaymentStatus, UsageType } from '../types/enums';
+import { PaymentType, PaymentStatus, UsageType, UserRole } from '../types/enums';
+import { SmsService } from './SmsService';
 
 // Komple satış için input tipi
 interface CompleteSaleInput {
@@ -72,33 +73,120 @@ export class SaleService {
   private paymentRepository = AppDataSource.getRepository(Payment);
   private packageRepository = AppDataSource.getRepository(Package);
 
+  /**
+   * Satış numarası oluştur
+   * Format: YYYYMMDD-HHMMSS-RANDOM
+   * Örnek: 20250115-143025-7891
+   */
+  private generatePolicyNumber(): string {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    return `${year}${month}${day}-${hours}${minutes}${seconds}-${random}`;
+  }
+
   // Satışları listele (tenant filter ile)
-  async getAll(filter?: any) {
+  async getAll(filter?: any, search?: string, userRole?: string) {
     const queryBuilder = this.saleRepository
       .createQueryBuilder('sale')
       .leftJoinAndSelect('sale.customer', 'customer')
       .leftJoinAndSelect('sale.vehicle', 'vehicle')
+      .leftJoinAndSelect('vehicle.brand', 'brand')
+      .leftJoinAndSelect('vehicle.model', 'model')
       .leftJoinAndSelect('sale.package', 'package')
       .leftJoinAndSelect('sale.agency', 'agency')
       .leftJoinAndSelect('sale.branch', 'branch')
       .leftJoinAndSelect('sale.user', 'user')
       .orderBy('sale.created_at', 'DESC');
 
+    // Tenant filter uygula
     if (filter) {
       // Sale entity'sinde 'created_by' yerine 'user_id' kolonu var
       applyTenantFilter(queryBuilder, filter, 'sale', 'user_id');
+    }
+
+    // Search query uygula
+    if (search && search.trim()) {
+      const searchTerm = `%${search.trim()}%`;
+      
+      // SUPPORT rolü için sadece satış numarası ve plaka ile arama
+      if (userRole === UserRole.SUPPORT) {
+        queryBuilder.andWhere(
+          `(sale.policy_number LIKE :search OR 
+            vehicle.plate LIKE :search)`,
+          { search: searchTerm }
+        );
+      } else {
+        // Diğer roller için tüm alanlarda arama
+        queryBuilder.andWhere(
+          `(customer.name LIKE :search OR 
+            customer.surname LIKE :search OR 
+            customer.tc_vkn LIKE :search OR 
+            vehicle.plate LIKE :search OR 
+            package.name LIKE :search OR 
+            agency.name LIKE :search OR 
+            branch.name LIKE :search OR 
+            sale.policy_number LIKE :search OR 
+            sale.id LIKE :search)`,
+          { search: searchTerm }
+        );
+      }
     }
 
     const sales = await queryBuilder.getMany();
     return sales;
   }
 
+  // Excel export için satışları getir (tarih aralığı + tenant filter)
+  async getForExport(filter?: any, startDate?: string, endDate?: string) {
+    const queryBuilder = this.saleRepository
+      .createQueryBuilder('sale')
+      .leftJoinAndSelect('sale.customer', 'customer')
+      .leftJoinAndSelect('sale.vehicle', 'vehicle')
+      .leftJoinAndSelect('vehicle.brand', 'brand')
+      .leftJoinAndSelect('vehicle.model', 'model')
+      .leftJoinAndSelect('sale.package', 'package')
+      .leftJoinAndSelect('sale.agency', 'agency')
+      .leftJoinAndSelect('sale.branch', 'branch')
+      .leftJoinAndSelect('sale.user', 'user')
+      .orderBy('sale.created_at', 'DESC');
+
+    // Tenant filter uygula
+    if (filter) {
+      applyTenantFilter(queryBuilder, filter, 'sale', 'user_id');
+    }
+
+    // Tarih aralığı filtresi
+    if (startDate) {
+      queryBuilder.andWhere('sale.created_at >= :startDate', { startDate });
+    }
+    if (endDate) {
+      queryBuilder.andWhere('sale.created_at <= :endDate', { endDate: `${endDate} 23:59:59` });
+    }
+
+    return await queryBuilder.getMany();
+  }
+
   // ID ile satış getir
   async getById(id: string) {
-    const sale = await this.saleRepository.findOne({
-      where: { id },
-      relations: ['customer', 'vehicle', 'package', 'agency', 'branch', 'user', 'payments'],
-    });
+    const sale = await this.saleRepository
+      .createQueryBuilder('sale')
+      .leftJoinAndSelect('sale.customer', 'customer')
+      .leftJoinAndSelect('sale.vehicle', 'vehicle')
+      .leftJoinAndSelect('vehicle.brand', 'brand')
+      .leftJoinAndSelect('vehicle.model', 'model')
+      .leftJoinAndSelect('sale.package', 'package')
+      .leftJoinAndSelect('sale.agency', 'agency')
+      .leftJoinAndSelect('sale.branch', 'branch')
+      .leftJoinAndSelect('sale.user', 'user')
+      .leftJoinAndSelect('sale.payments', 'payments')
+      .where('sale.id = :id', { id })
+      .getOne();
 
     if (!sale) {
       throw new AppError(404, 'Sale not found');
@@ -145,13 +233,112 @@ export class SaleService {
     return (price * commissionRate) / 100;
   }
 
+  /**
+   * Dağılımlı komisyon hesaplar
+   * Şube varsa: Şube kendi komisyonunu alır, kalan kısım (acente komisyonu - şube komisyonu) acenteye gider
+   * Şube yoksa: Sadece acente komisyonu
+   * @param price - Satış fiyatı
+   * @param branchId - Şube ID (opsiyonel)
+   * @param agencyId - Acente ID (opsiyonel)
+   * @returns { branch_commission, agency_commission, total_commission }
+   */
+  async calculateDistributedCommission(
+    price: number,
+    branchId: string | null,
+    agencyId: string | null
+  ): Promise<{
+    branch_commission: number | null;
+    agency_commission: number | null;
+    total_commission: number;
+  }> {
+    // 1. Şube varsa: Dağılımlı komisyon hesapla
+    if (branchId) {
+      const branch = await this.branchRepository.findOne({ where: { id: branchId } });
+      if (!branch) {
+        throw new AppError(404, 'Şube bulunamadı');
+      }
+
+      // Acente bilgisi gerekli (şube bir acenteye bağlı olmalı)
+      if (!branch.agency_id) {
+        throw new AppError(400, 'Şube bir acenteye bağlı olmalı');
+      }
+
+      const agency = await this.agencyRepository.findOne({ where: { id: branch.agency_id } });
+      if (!agency) {
+        throw new AppError(404, 'Acente bulunamadı');
+      }
+
+      const branchRate = Number(branch.commission_rate);
+      const agencyRate = Number(agency.commission_rate);
+
+      // Validasyon: Şube komisyon oranı acente komisyon oranından fazla olamaz
+      if (branchRate > agencyRate) {
+        throw new AppError(400, `Şube komisyon oranı (${branchRate}%) acente komisyon oranından (${agencyRate}%) fazla olamaz`);
+      }
+
+      // Şube komisyonu = price × branch_rate / 100
+      const branchCommission = (price * branchRate) / 100;
+
+      // Acente komisyonu = price × (agency_rate - branch_rate) / 100
+      const agencyCommission = (price * (agencyRate - branchRate)) / 100;
+
+      // Toplam = price × agency_rate / 100
+      const totalCommission = (price * agencyRate) / 100;
+
+      return {
+        branch_commission: branchCommission,
+        agency_commission: agencyCommission,
+        total_commission: totalCommission,
+      };
+    }
+
+    // 2. Şube yoksa ama acente varsa: Sadece acente komisyonu
+    if (agencyId) {
+      const agency = await this.agencyRepository.findOne({ where: { id: agencyId } });
+      if (!agency) {
+        throw new AppError(404, 'Acente bulunamadı');
+      }
+
+      const agencyRate = Number(agency.commission_rate);
+      const agencyCommission = (price * agencyRate) / 100;
+
+      return {
+        branch_commission: null,
+        agency_commission: agencyCommission,
+        total_commission: agencyCommission,
+      };
+    }
+
+    // 3. İkisi de yoksa: Varsayılan %20
+    const defaultRate = 20;
+    const defaultCommission = (price * defaultRate) / 100;
+
+    return {
+      branch_commission: null,
+      agency_commission: defaultCommission,
+      total_commission: defaultCommission,
+    };
+  }
+
   // Yeni satış oluştur
   async create(data: Partial<Sale>) {
-    // Komisyon otomatik hesaplanmamışsa hesapla
-    // Şube veya acente olmasa bile komisyon hesaplanabilir (varsayılan %20)
-    if (data.commission === undefined && data.price) {
-      const commissionRate = await this.getCommissionRate(data.branch_id || null, data.agency_id || null);
-      data.commission = this.calculateCommission(Number(data.price), commissionRate);
+    // Dağılımlı komisyon hesapla (eğer hesaplanmamışsa)
+    if (data.price && (data.branch_commission === undefined || data.agency_commission === undefined || data.commission === undefined)) {
+      const distributedCommission = await this.calculateDistributedCommission(
+        Number(data.price),
+        data.branch_id || null,
+        data.agency_id || null
+      );
+
+      // Dağılımlı komisyon değerlerini set et
+      data.branch_commission = distributedCommission.branch_commission;
+      data.agency_commission = distributedCommission.agency_commission;
+      data.commission = distributedCommission.total_commission;
+    }
+    
+    // Satış numarası yoksa otomatik oluştur
+    if (!data.policy_number) {
+      data.policy_number = this.generatePolicyNumber();
     }
     
     const sale = this.saleRepository.create(data);
@@ -204,6 +391,21 @@ export class SaleService {
       // 1. MÜŞTERI İŞLEMİ
       let customer: Customer;
       
+      // Boş string'leri null'a çevir (MySQL için gerekli)
+      // Özellikle birth_date boş string olarak gelirse null yapılmalı
+      const sanitizeCustomerData = (data: any) => {
+        return {
+          ...data,
+          surname: data.surname && data.surname.trim() !== '' ? data.surname : null,
+          tax_office: data.tax_office && data.tax_office.trim() !== '' ? data.tax_office : null,
+          birth_date: data.birth_date && data.birth_date.trim() !== '' ? data.birth_date : null,
+          email: data.email && data.email.trim() !== '' ? data.email : null,
+          city: data.city && data.city.trim() !== '' ? data.city : null,
+          district: data.district && data.district.trim() !== '' ? data.district : null,
+          address: data.address && data.address.trim() !== '' ? data.address : null,
+        };
+      };
+      
       if (input.customer.id) {
         // Mevcut müşteri güncelle
         const existingCustomer = await queryRunner.manager.findOne(Customer, {
@@ -214,26 +416,28 @@ export class SaleService {
           throw new AppError(404, 'Müşteri bulunamadı');
         }
         
-        // Müşteri bilgilerini güncelle
+        // Müşteri bilgilerini güncelle (boş string'leri null'a çevir)
+        const sanitizedData = sanitizeCustomerData(input.customer);
         Object.assign(existingCustomer, {
-          is_corporate: input.customer.is_corporate,
-          tc_vkn: input.customer.tc_vkn,
-          name: input.customer.name,
-          surname: input.customer.surname,
-          tax_office: input.customer.tax_office,
-          birth_date: input.customer.birth_date,
-          phone: input.customer.phone,
-          email: input.customer.email,
-          city: input.customer.city,
-          district: input.customer.district,
-          address: input.customer.address,
+          is_corporate: sanitizedData.is_corporate,
+          tc_vkn: sanitizedData.tc_vkn,
+          name: sanitizedData.name,
+          surname: sanitizedData.surname,
+          tax_office: sanitizedData.tax_office,
+          birth_date: sanitizedData.birth_date,
+          phone: sanitizedData.phone,
+          email: sanitizedData.email,
+          city: sanitizedData.city,
+          district: sanitizedData.district,
+          address: sanitizedData.address,
         });
         
         customer = await queryRunner.manager.save(existingCustomer);
       } else {
-        // Yeni müşteri oluştur
+        // Yeni müşteri oluştur (boş string'leri null'a çevir)
+        const sanitizedData = sanitizeCustomerData(input.customer);
         const newCustomer = queryRunner.manager.create(Customer, {
-          ...input.customer,
+          ...sanitizedData,
           agency_id: input.agency_id,
           branch_id: input.branch_id,
           created_by: input.user_id,
@@ -289,13 +493,41 @@ export class SaleService {
         throw new AppError(404, 'Paket bulunamadı');
       }
 
-      // Komisyon hesapla (eğer gönderilmemişse)
-      // Şube veya acente olmasa bile komisyon hesaplanabilir (varsayılan %20)
-      let commission = input.sale.commission;
-      if (commission === undefined) {
-        const commissionRate = await this.getCommissionRate(input.branch_id || null, input.agency_id || null);
-        commission = this.calculateCommission(Number(input.sale.price), commissionRate);
+      // Dağılımlı komisyon hesapla (eğer gönderilmemişse)
+      let branchCommission: number | null = null;
+      let agencyCommission: number | null = null;
+      let totalCommission: number = 0;
+
+      if (input.sale.commission === undefined) {
+        const distributedCommission = await this.calculateDistributedCommission(
+          Number(input.sale.price),
+          input.branch_id || null,
+          input.agency_id || null
+        );
+        branchCommission = distributedCommission.branch_commission;
+        agencyCommission = distributedCommission.agency_commission;
+        totalCommission = distributedCommission.total_commission;
+      } else {
+        // Manuel komisyon gönderilmişse, eski mantıkla toplam komisyonu kullan
+        totalCommission = input.sale.commission;
+        // Manuel durumda dağılımlı komisyon hesapla (gösterim için)
+        try {
+          const distributedCommission = await this.calculateDistributedCommission(
+            Number(input.sale.price),
+            input.branch_id || null,
+            input.agency_id || null
+          );
+          branchCommission = distributedCommission.branch_commission;
+          agencyCommission = distributedCommission.agency_commission;
+        } catch (error) {
+          // Hata durumunda null bırak
+          branchCommission = null;
+          agencyCommission = null;
+        }
       }
+
+      // Satış numarası oluştur (eğer gönderilmemişse)
+      const policyNumber = this.generatePolicyNumber();
 
       // Satış oluştur
       const newSale = queryRunner.manager.create(Sale, {
@@ -306,12 +538,40 @@ export class SaleService {
         user_id: input.user_id,
         package_id: input.sale.package_id,
         price: input.sale.price,
-        commission: commission || 0,
+        commission: totalCommission,
+        branch_commission: branchCommission,
+        agency_commission: agencyCommission,
         start_date: input.sale.start_date,
         end_date: input.sale.end_date,
+        policy_number: policyNumber,
       });
       
       const sale = await queryRunner.manager.save(newSale);
+
+      // 3.5. BAKİYE GÜNCELLEMELERİ
+      // Şube varsa: Şube bakiyesine branch_commission ekle
+      if (input.branch_id && branchCommission !== null && branchCommission > 0) {
+        const branch = await queryRunner.manager.findOne(Branch, {
+          where: { id: input.branch_id }
+        });
+        if (branch) {
+          const currentBalance = parseFloat(branch.balance?.toString() || '0') || 0;
+          branch.balance = currentBalance + branchCommission;
+          await queryRunner.manager.save(branch);
+        }
+      }
+
+      // Acente varsa: Acente bakiyesine agency_commission ekle
+      if (input.agency_id && agencyCommission !== null && agencyCommission > 0) {
+        const agency = await queryRunner.manager.findOne(Agency, {
+          where: { id: input.agency_id }
+        });
+        if (agency) {
+          const currentBalance = parseFloat(agency.balance?.toString() || '0') || 0;
+          agency.balance = currentBalance + agencyCommission;
+          await queryRunner.manager.save(agency);
+        }
+      }
 
       // 4. ÖDEME İŞLEMİ
       let payment: Payment;
@@ -377,6 +637,32 @@ export class SaleService {
 
       // Transaction başarılı - commit et
       await queryRunner.commitTransaction();
+
+      // SMS gönderme işlemi (hata durumunda ana işlemi etkilememeli)
+      if (customer.phone) {
+        try {
+          const smsService = new SmsService();
+          // Tarih formatlama için helper fonksiyon
+          const formatDate = (dateString: string) => {
+            const date = new Date(dateString);
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            return `${day}.${month}.${year}`;
+          };
+          
+          const customerName = `${customer.name}${customer.surname ? ' ' + customer.surname : ''}`;
+          const packageName = pkg.name;
+          const startDate = formatDate(input.sale.start_date);
+          const endDate = formatDate(input.sale.end_date);
+          
+          const smsMessage = `Sayın ${customerName}, ${packageName} paketiniz başarıyla oluşturuldu. Satış No: ${policyNumber}, Başlangıç: ${startDate}, Bitiş: ${endDate}. 7/24 Destek: 0850 304 54 40`;
+          await smsService.sendSingleSms(customer.phone, smsMessage);
+        } catch (error: any) {
+          // SMS gönderme hatası ana işlemi etkilememeli, sadece log yaz
+          console.error('SMS gönderme hatası (satış tamamlama):', error.message);
+        }
+      }
 
       // Satışı ilişkileriyle birlikte döndür
       return await this.getById(sale.id);

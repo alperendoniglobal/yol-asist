@@ -3,6 +3,7 @@ import { SaleService } from '../services/SaleService';
 import { asyncHandler } from '../middlewares/errorHandler';
 import { successResponse } from '../utils/response';
 import { UserRole } from '../types/enums';
+import ExcelJS from 'exceljs';
 
 export class SaleController {
   private saleService: SaleService;
@@ -12,7 +13,19 @@ export class SaleController {
   }
 
   getAll = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-    const sales = await this.saleService.getAll(req.tenantFilter);
+    const { search } = req.query; // Arama sorgusu (opsiyonel)
+    
+    // SUPPORT rolü için: search parametresi yoksa boş array döndür
+    if (req.user?.role === UserRole.SUPPORT && !search) {
+      successResponse(res, [], 'No search query provided');
+      return;
+    }
+    
+    const sales = await this.saleService.getAll(
+      req.tenantFilter, 
+      search as string | undefined,
+      req.user?.role // User role'ü geçir
+    );
     
     // BRANCH_USER rolündeki kullanıcılar komisyon bilgisini göremez
     // Komisyon bilgisini response'dan çıkar
@@ -147,5 +160,186 @@ export class SaleController {
     );
 
     successResponse(res, updatedSale, 'İade işlemi başarıyla tamamlandı');
+  });
+
+  /**
+   * Excel export - Satışları Excel formatında indir
+   * Rol bazlı filtreleme otomatik olarak uygulanır (tenantFilter)
+   * Tarih aralığı filtresi opsiyonel olarak query parametrelerinden alınır
+   */
+  export = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    // Query parametrelerinden tarih aralığı al
+    const { startDate, endDate } = req.query;
+    
+    // SaleService'den filtreli satışları çek (tenantFilter + tarih aralığı)
+    const sales = await this.saleService.getForExport(
+      req.tenantFilter,
+      startDate as string | undefined,
+      endDate as string | undefined
+    );
+    
+    // Excel dosyası oluştur
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Satışlar');
+    
+    // Komisyon görüntüleme yetkisi kontrolü
+    const canViewCommission = req.user?.role === UserRole.SUPER_ADMIN 
+      || req.user?.role === UserRole.AGENCY_ADMIN 
+      || req.user?.role === UserRole.BRANCH_ADMIN;
+    
+    // Kolon başlıkları
+    const headers = [
+      'Satış No',
+      'Müşteri Adı',
+      'Müşteri Soyadı',
+      'TC/VKN',
+      'Telefon',
+      'Araç Plakası',
+      'Paket Adı',
+      'Başlangıç Tarihi',
+      'Bitiş Tarihi',
+      'Fiyat (TL)',
+    ];
+    
+    // Komisyon kolonu sadece yetkisi olanlar için
+    if (canViewCommission) {
+      headers.push('Komisyon (TL)');
+    }
+    
+    headers.push(
+      'Acente Adı',
+      'Şube Adı',
+      'Personel Adı',
+      'Personel Soyadı',
+      'Durum',
+      'İade Tarihi',
+      'İade Tutarı (TL)',
+      'İade Sebebi',
+      'Oluşturulma Tarihi'
+    );
+    
+    // Başlık satırını ekle
+    worksheet.addRow(headers);
+    
+    // Başlık satırını formatla
+    const headerRow = worksheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF4472C4' }
+    };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+    headerRow.height = 20;
+    
+    // Veri satırlarını ekle
+    sales.forEach((sale) => {
+      const today = new Date();
+      const endDate = new Date(sale.end_date);
+      let status = 'Aktif';
+      if (sale.is_refunded) {
+        status = 'İade Edildi';
+      } else if (endDate < today) {
+        status = 'Süresi Dolmuş';
+      }
+      
+      const row = [
+        sale.policy_number || sale.id.slice(0, 8).toUpperCase(), // Satış No (policy_number yoksa ID'nin ilk 8 karakteri)
+        sale.customer?.name || '',
+        sale.customer?.surname || '',
+        sale.customer?.tc_vkn || '',
+        sale.customer?.phone || '',
+        sale.vehicle?.plate || '',
+        sale.package?.name || '',
+        sale.start_date ? new Date(sale.start_date).toLocaleDateString('tr-TR') : '',
+        sale.end_date ? new Date(sale.end_date).toLocaleDateString('tr-TR') : '',
+        parseFloat(sale.price.toString()).toFixed(2),
+      ];
+      
+      // Komisyon kolonu sadece yetkisi olanlar için
+      if (canViewCommission) {
+        row.push(parseFloat(sale.commission.toString()).toFixed(2));
+      }
+      
+      row.push(
+        (sale.agency as any)?.name || '',
+        (sale.branch as any)?.name || '',
+        sale.user?.name || '',
+        sale.user?.surname || '',
+        status,
+        sale.refunded_at ? new Date(sale.refunded_at).toLocaleDateString('tr-TR') : '',
+        sale.refund_amount ? parseFloat(sale.refund_amount.toString()).toFixed(2) : '',
+        sale.refund_reason || '',
+        sale.created_at ? new Date(sale.created_at).toLocaleDateString('tr-TR') : ''
+      );
+      
+      worksheet.addRow(row);
+    });
+    
+    // Kolon genişliklerini ayarla
+    worksheet.columns.forEach((column, index) => {
+      if (index === 0) {
+        // Satış No kolonu
+        column.width = 15;
+      } else if (index >= 1 && index <= 4) {
+        // Müşteri bilgileri
+        column.width = 15;
+      } else if (index === 5) {
+        // Araç Plakası
+        column.width = 12;
+      } else if (index === 6) {
+        // Paket Adı
+        column.width = 20;
+      } else if (index >= 7 && index <= 8) {
+        // Tarihler
+        column.width = 12;
+      } else if (index === 9 || (canViewCommission && index === 10)) {
+        // Fiyat ve Komisyon
+        column.width = 12;
+        column.numFmt = '#,##0.00';
+      } else if (index === (canViewCommission ? 11 : 10) || index === (canViewCommission ? 12 : 11)) {
+        // Acente ve Şube
+        column.width = 20;
+      } else if (index >= (canViewCommission ? 13 : 12) && index <= (canViewCommission ? 14 : 13)) {
+        // Personel bilgileri
+        column.width = 15;
+      } else if (index === (canViewCommission ? 15 : 14)) {
+        // Durum
+        column.width = 15;
+      } else if (index === (canViewCommission ? 16 : 15)) {
+        // İade Tarihi
+        column.width = 12;
+      } else if (index === (canViewCommission ? 17 : 16)) {
+        // İade Tutarı
+        column.width = 15;
+        column.numFmt = '#,##0.00';
+      } else if (index === (canViewCommission ? 18 : 17)) {
+        // İade Sebebi
+        column.width = 30;
+      } else {
+        // Oluşturulma Tarihi
+        column.width = 12;
+      }
+    });
+    
+    // Tüm hücrelere border ekle
+    worksheet.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+        cell.alignment = { vertical: 'middle', horizontal: 'left' };
+      });
+    });
+    
+    // Excel dosyasını response olarak gönder
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="satislar_${Date.now()}.xlsx"`);
+    
+    await workbook.xlsx.write(res);
+    res.end();
   });
 }

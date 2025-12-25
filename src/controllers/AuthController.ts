@@ -48,4 +48,15 @@ export class AuthController {
     const result = await this.authService.changePassword(req.user.id, oldPassword, newPassword);
     successResponse(res, result, 'Password changed successfully');
   });
+
+  forgotPassword = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { email } = req.body;
+
+    if (!email) {
+      return errorResponse(res, 'Email is required', 400);
+    }
+
+    const result = await this.authService.forgotPassword(email);
+    successResponse(res, result, 'Password reset information sent');
+  });
 }

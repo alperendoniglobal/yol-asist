@@ -19,4 +19,7 @@ router.delete('/:id', superAdminOnly, agencyController.delete);
 // Statistics
 router.get('/:id/stats', agencyController.getStats);
 
+// Komisyon dağılım raporu (Acente Admin için)
+router.get('/:id/commission-distribution', agencyController.getBranchCommissionDistribution);
+
 export default router;

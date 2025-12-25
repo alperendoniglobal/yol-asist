@@ -10,3 +10,4 @@ export { PaymentController } from './PaymentController';
 export { CommissionController } from './CommissionController';
 export { SupportController } from './SupportController';
 export { StatsController } from './StatsController';
+export { ContentController } from './ContentController';

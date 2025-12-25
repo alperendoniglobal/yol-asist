@@ -6,6 +6,7 @@ import { AppError } from '../middlewares/errorHandler';
 import { applyTenantFilter } from '../middlewares/tenantMiddleware';
 import { hashPassword } from '../utils/hash';
 import { EntityStatus, UserRole } from '../types/enums';
+import { SmsService } from './SmsService';
 
 export class UserService {
   private userRepository = AppDataSource.getRepository(User);
@@ -218,6 +219,18 @@ export class UserService {
     });
 
     await this.userRepository.save(user);
+
+    // SMS gönderme işlemi (hata durumunda ana işlemi etkilememeli)
+    if (user.phone) {
+      try {
+        const smsService = new SmsService();
+        const smsMessage = `Merhaba ${user.name}${user.surname ? ' ' + user.surname : ''}, Çözüm Asistan sistemine hoş geldiniz. E-posta: ${user.email}, Şifre: ${data.password}. 7/24 Destek: 0850 304 54 40`;
+        await smsService.sendSingleSms(user.phone, smsMessage);
+      } catch (error: any) {
+        // SMS gönderme hatası ana işlemi etkilememeli, sadece log yaz
+        console.error('SMS gönderme hatası (yeni kullanıcı):', error.message);
+      }
+    }
 
     const { password, ...userWithoutPassword } = user;
     return {

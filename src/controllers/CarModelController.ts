@@ -19,6 +19,17 @@ export class CarModelController {
   getById = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
     const model = await this.modelService.getById(parseInt(id));
+    
+    // Model bulunamazsa 404 döndür
+    if (!model) {
+      res.status(404).json({
+        success: false,
+        message: 'Car model not found',
+        data: null
+      });
+      return;
+    }
+    
     successResponse(res, model, 'Car model retrieved successfully');
   });
 
