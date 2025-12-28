@@ -1,5 +1,7 @@
 import { AppDataSource } from '../config/database';
 import { SupportFile } from '../entities/SupportFile';
+import { Sale } from '../entities/Sale';
+import { PackageCover } from '../entities/PackageCover';
 import { AppError } from '../middlewares/errorHandler';
 
 /**
@@ -8,6 +10,8 @@ import { AppError } from '../middlewares/errorHandler';
  */
 export class SupportFileService {
   private fileRepository = AppDataSource.getRepository(SupportFile);
+  private saleRepository = AppDataSource.getRepository(Sale);
+  private packageCoverRepository = AppDataSource.getRepository(PackageCover);
 
   /**
    * Benzersiz hasar dosya numarası oluştur
@@ -110,9 +114,54 @@ export class SupportFileService {
 
   /**
    * Yeni hasar dosyası oluştur
+   * Kullanım limiti kontrolü yapar - paket kapsamındaki usage_count'u aşamaz
    */
   async create(data: Partial<SupportFile>) {
-    // Hasar dosya numarası otomatik oluştur
+    // ===== KULLANIM LİMİTİ KONTROLÜ =====
+    // Seçilen hizmet tipi için kullanım limiti dolmuş mu kontrol et
+    if (data.sale_id && data.service_type) {
+      // 1. Satışı bul ve paket ID'sini al
+      const sale = await this.saleRepository.findOne({
+        where: { id: data.sale_id },
+        select: ['id', 'package_id']
+      });
+      
+      if (!sale) {
+        throw new AppError(404, 'Satış bulunamadı');
+      }
+
+      if (sale.package_id) {
+        // 2. Bu hizmet tipi için paket kapsamını bul (usage_count bilgisi için)
+        const cover = await this.packageCoverRepository.findOne({
+          where: { 
+            package_id: sale.package_id, 
+            title: data.service_type 
+          }
+        });
+
+        if (cover) {
+          // 3. Bu satış ve hizmet tipi için mevcut dosya sayısını say
+          const existingCount = await this.fileRepository.count({
+            where: { 
+              sale_id: data.sale_id, 
+              service_type: data.service_type 
+            }
+          });
+
+          // 4. Limit kontrolü - mevcut sayı >= kullanım hakkı ise engelle
+          if (existingCount >= cover.usage_count) {
+            throw new AppError(400, 
+              `Bu hizmet için kullanım limiti dolmuş! ` +
+              `"${data.service_type}" hizmeti için ${cover.usage_count} kullanım hakkınız var ` +
+              `ve tamamı kullanılmış.`
+            );
+          }
+        }
+        // cover bulunamazsa (eski paket veya custom hizmet) kontrol yapma, devam et
+      }
+    }
+
+    // ===== HASAR DOSYA NUMARASI OLUŞTUR =====
     let damageFileNumber = data.damage_file_number;
     if (!damageFileNumber) {
       damageFileNumber = this.generateDamageFileNumber();
@@ -132,6 +181,7 @@ export class SupportFileService {
       }
     }
 
+    // ===== DOSYA OLUŞTUR VE KAYDET =====
     const file = this.fileRepository.create({
       ...data,
       damage_file_number: damageFileNumber,
