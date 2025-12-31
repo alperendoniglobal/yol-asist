@@ -12,3 +12,6 @@ export { SupportService } from './SupportService';
 export { StatsService } from './StatsService';
 export { ContentService } from './ContentService';
 export { SmsService } from './SmsService';
+export { PublicService } from './PublicService';
+export { DealerApplicationService } from './DealerApplicationService';
+export { UserCustomerService } from './UserCustomerService';

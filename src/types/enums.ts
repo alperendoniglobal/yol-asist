@@ -3,7 +3,15 @@ export enum UserRole {
   AGENCY_ADMIN = 'AGENCY_ADMIN',
   BRANCH_ADMIN = 'BRANCH_ADMIN',
   BRANCH_USER = 'BRANCH_USER',
-  SUPPORT = 'SUPPORT' // Destek ekibi - Sadece SUPER_ADMIN oluşturabilir
+  SUPPORT = 'SUPPORT', // Destek ekibi - Sadece SUPER_ADMIN oluşturabilir
+  USER = 'USER' // Son kullanıcı - Public satın alma yapan kullanıcılar
+}
+
+// Bayilik başvuru durumu
+export enum DealerApplicationStatus {
+  PENDING = 'PENDING',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED'
 }
 
 export enum EntityStatus {

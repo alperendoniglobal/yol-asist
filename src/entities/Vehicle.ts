@@ -17,14 +17,21 @@ import { CarBrand } from './CarBrand';
 import { CarModel } from './CarModel';
 import { MotorBrand } from './MotorBrand';
 import { MotorModel } from './MotorModel';
+import { UserCustomer } from './UserCustomer';
 
 @Entity('vehicles')
 export class Vehicle {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid' })
-  customer_id: string;
+  // Acente müşterisi için (Customer tablosundan)
+  @Column({ type: 'uuid', nullable: true })
+  customer_id: string | null;
+
+  // Bireysel kullanıcı için (UserCustomer tablosundan)
+  // customer_id veya user_customer_id'den biri dolu olmalı
+  @Column({ type: 'uuid', nullable: true })
+  user_customer_id: string | null;
 
   // Sistem kayıtları için nullable (Super Admin oluşturduğunda null olabilir)
   @Column({ type: 'uuid', nullable: true })
@@ -82,9 +89,14 @@ export class Vehicle {
   updated_at: Date;
 
   // Relations
-  @ManyToOne(() => Customer, customer => customer.vehicles, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Customer, customer => customer.vehicles, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'customer_id' })
-  customer: Customer;
+  customer: Customer | null;
+
+  // Bireysel kullanıcı ilişkisi
+  @ManyToOne(() => UserCustomer, userCustomer => userCustomer.vehicles, { onDelete: 'CASCADE', nullable: true })
+  @JoinColumn({ name: 'user_customer_id' })
+  user_customer: UserCustomer | null;
 
   @ManyToOne(() => Agency, agency => agency.vehicles, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'agency_id' })

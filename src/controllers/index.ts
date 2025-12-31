@@ -11,3 +11,6 @@ export { CommissionController } from './CommissionController';
 export { SupportController } from './SupportController';
 export { StatsController } from './StatsController';
 export { ContentController } from './ContentController';
+export { PublicController } from './PublicController';
+export { DealerApplicationController } from './DealerApplicationController';
+export { UserCustomerController } from './UserCustomerController';

@@ -91,16 +91,16 @@ export class CreateMotorBrandsAndModels1702200000007 implements MigrationInterfa
     );
     
     if (!brandFkExists) {
-      await queryRunner.createForeignKey(
-        'motor_models',
-        new TableForeignKey({
+    await queryRunner.createForeignKey(
+      'motor_models',
+      new TableForeignKey({
           name: 'FK_motor_models_brand_id', // Manuel isim veriyoruz
-          columnNames: ['brand_id'],
-          referencedColumnNames: ['id'],
-          referencedTableName: 'motor_brands',
-          onDelete: 'CASCADE',
-        })
-      );
+        columnNames: ['brand_id'],
+        referencedColumnNames: ['id'],
+        referencedTableName: 'motor_brands',
+        onDelete: 'CASCADE',
+      })
+    );
       console.log('motor_models -> motor_brands foreign key eklendi.');
     } else {
       console.log('motor_models -> motor_brands foreign key zaten mevcut, atlandı.');
@@ -113,13 +113,13 @@ export class CreateMotorBrandsAndModels1702200000007 implements MigrationInterfa
     );
     
     if (!indexExists) {
-      await queryRunner.createIndex(
-        'motor_models',
-        new TableIndex({
-          name: 'IDX_motor_models_brand_id',
-          columnNames: ['brand_id'],
-        })
-      );
+    await queryRunner.createIndex(
+      'motor_models',
+      new TableIndex({
+        name: 'IDX_motor_models_brand_id',
+        columnNames: ['brand_id'],
+      })
+    );
       console.log('IDX_motor_models_brand_id index eklendi.');
     } else {
       console.log('IDX_motor_models_brand_id index zaten mevcut, atlandı.');
@@ -171,14 +171,14 @@ export class CreateMotorBrandsAndModels1702200000007 implements MigrationInterfa
           brandId = existingBrandMap.get(brandName)!;
           existingBrandsCount++;
         } else {
-          // Markayı ekle ve ID'yi al
-          await queryRunner.query(
-            `INSERT INTO motor_brands (name, created_at, updated_at) VALUES (?, NOW(), NOW())`,
-            [brandName]
-          );
-          
-          // Son eklenen markanın ID'sini al
-          const brandIdResult = await queryRunner.query(`SELECT LAST_INSERT_ID() as id`);
+        // Markayı ekle ve ID'yi al
+        await queryRunner.query(
+          `INSERT INTO motor_brands (name, created_at, updated_at) VALUES (?, NOW(), NOW())`,
+          [brandName]
+        );
+        
+        // Son eklenen markanın ID'sini al
+        const brandIdResult = await queryRunner.query(`SELECT LAST_INSERT_ID() as id`);
           brandId = brandIdResult[0].id;
           newBrandsCount++;
         }
@@ -215,7 +215,7 @@ export class CreateMotorBrandsAndModels1702200000007 implements MigrationInterfa
               params.push(brandId, modelName);
             });
             
-            await queryRunner.query(
+          await queryRunner.query(
               `INSERT INTO motor_models (brand_id, name, created_at, updated_at) VALUES ${values}`,
               params
             );

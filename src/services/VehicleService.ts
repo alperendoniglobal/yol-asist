@@ -129,9 +129,13 @@ export class VehicleService {
   }
 
   // Müşteriye ait araçları getir
+  // customer_id nullable olduğu için customerId'nin varlığını kontrol ediyoruz
   async getByCustomer(customerId: string) {
+    if (!customerId) {
+      return [];
+    }
     const vehicles = await this.vehicleRepository.find({
-      where: { customer_id: customerId },
+      where: { customer_id: customerId as string },
       relations: ['customer', 'brand', 'model', 'motorBrand', 'motorModel'],
     });
     // Normalize et - brand ve model her zaman gelsin

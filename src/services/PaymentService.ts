@@ -70,10 +70,20 @@ export class PaymentService {
       throw new AppError(404, 'Sale not found');
     }
 
-    const customer = await this.customerRepository.findOne({
-      where: { id: sale.customer_id },
-    });
+    // Customer veya UserCustomer kontrolü
+    // Sale'da customer_id veya user_customer_id olabilir
+    if (!sale.customer_id && !sale.user_customer_id) {
+      throw new AppError(404, 'Customer not found');
+    }
 
+    const customer = sale.customer_id
+      ? await this.customerRepository.findOne({
+          where: { id: sale.customer_id },
+        })
+      : null;
+
+    // UserCustomer için ödeme henüz desteklenmiyor bu service'de
+    // UserCustomerService.purchase() içinden yapılıyor
     if (!customer) {
       throw new AppError(404, 'Customer not found');
     }

@@ -20,3 +20,5 @@ export { LandingPageStat } from './LandingPageStat';
 export { PageContent } from './PageContent';
 export { MotorBrand } from './MotorBrand';
 export { MotorModel } from './MotorModel';
+export { DealerApplication } from './DealerApplication';
+export { UserCustomer } from './UserCustomer';

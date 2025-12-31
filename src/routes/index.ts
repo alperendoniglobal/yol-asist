@@ -18,8 +18,17 @@ import supportFileRoutes from './supportFileRoutes';
 import statsRoutes from './statsRoutes';
 import pdfRoutes from './pdfRoutes';
 import contentRoutes from './contentRoutes';
+import publicRoutes from './publicRoutes';
+import dealerApplicationRoutes from './dealerApplicationRoutes';
+import userCustomerRoutes from './userCustomerRoutes';
 
 const router = Router();
+
+// Public Routes (authentication gerektirmez)
+router.use('/public', publicRoutes);
+
+// UserCustomer Routes (bireysel kullanıcılar için)
+router.use('/user-customer', userCustomerRoutes);
 
 // API Routes
 router.use('/auth', authRoutes);
@@ -41,6 +50,7 @@ router.use('/support-files', supportFileRoutes);
 router.use('/stats', statsRoutes);
 router.use('/pdf', pdfRoutes);
 router.use('/content', contentRoutes);
+router.use('/dealer-applications', dealerApplicationRoutes);
 
 // Health check
 router.get('/health', (req, res) => {
