@@ -370,7 +370,8 @@ export class UserCustomerService {
         // Yeni araç oluştur
         vehicle = queryRunner.manager.create(Vehicle, {
           user_customer_id: userId,
-          customer_id: null, // UserCustomer için customer_id null
+          // UserCustomer için customer_id undefined (TypeORM undefined'ı ignore eder, null göndermez)
+          // customer_id: undefined, // Açıkça belirtmeye gerek yok, entity'de nullable
           is_foreign_plate: input.vehicle.is_foreign_plate || false,
           plate: normalizedPlate,
           vehicle_type: input.vehicle.vehicle_type,
