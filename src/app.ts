@@ -11,6 +11,10 @@ import logger from './utils/logger';
 
 const app: Application = express();
 
+// Trust proxy - Production'da nginx/cloudflare arkasında çalışırken
+// gerçek client IP'sini almak için gerekli (X-Forwarded-For header)
+app.set('trust proxy', true);
+
 // Security middleware
 app.use(helmet());
 

@@ -9,3 +9,4 @@ export {
 export { tenantMiddleware, applyTenantFilter } from './tenantMiddleware';
 export { errorHandler, AppError, asyncHandler } from './errorHandler';
 export { validationMiddleware } from './validationMiddleware';
+export { requireContractAcceptance, checkContractStatus } from './contractCheckMiddleware';

@@ -21,6 +21,7 @@ import contentRoutes from './contentRoutes';
 import publicRoutes from './publicRoutes';
 import dealerApplicationRoutes from './dealerApplicationRoutes';
 import userCustomerRoutes from './userCustomerRoutes';
+import contractRoutes from './contractRoutes';
 
 const router = Router();
 
@@ -51,6 +52,7 @@ router.use('/stats', statsRoutes);
 router.use('/pdf', pdfRoutes);
 router.use('/content', contentRoutes);
 router.use('/dealer-applications', dealerApplicationRoutes);
+router.use('/contract', contractRoutes);
 
 // Health check
 router.get('/health', (req, res) => {

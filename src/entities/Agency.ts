@@ -75,6 +75,21 @@ export class Agency {
   @Column({ type: 'varchar', length: 34, nullable: true })
   iban: string | null;
 
+  // Sözleşme kabul edildi mi?
+  // Bu alan false ise acente hiçbir işlem yapamaz (satış, kullanıcı ekleme, şube ekleme vb.)
+  @Column({ type: 'boolean', default: false })
+  contract_accepted: boolean;
+
+  // Kabul edilen sözleşme versiyonu
+  // Sözleşme güncellendiğinde bu alan kontrol edilir
+  // Eğer aktif versiyon farklıysa acente yeniden onay vermek zorunda
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  accepted_contract_version: string | null;
+
+  // Sözleşmenin kabul edildiği tarih
+  @Column({ type: 'timestamp', nullable: true })
+  contract_accepted_at: Date | null;
+
   @CreateDateColumn()
   created_at: Date;
 

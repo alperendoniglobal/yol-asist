@@ -14,3 +14,4 @@ export { ContentController } from './ContentController';
 export { PublicController } from './PublicController';
 export { DealerApplicationController } from './DealerApplicationController';
 export { UserCustomerController } from './UserCustomerController';
+export { ContractController } from './ContractController';

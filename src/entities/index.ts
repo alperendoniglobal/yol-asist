@@ -22,3 +22,5 @@ export { MotorBrand } from './MotorBrand';
 export { MotorModel } from './MotorModel';
 export { DealerApplication } from './DealerApplication';
 export { UserCustomer } from './UserCustomer';
+export { ContractVersion } from './ContractVersion';
+export { AgencyContractAcceptance } from './AgencyContractAcceptance';
