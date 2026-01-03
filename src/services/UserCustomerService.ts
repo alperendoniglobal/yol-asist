@@ -397,19 +397,17 @@ export class UserCustomerService {
 
       const sale = queryRunner.manager.create(Sale, {
         user_customer_id: userId,
-        customer_id: undefined, // UserCustomer için customer_id undefined
+        // UserCustomer için customer_id null (undefined göndermiyoruz, TypeORM DEFAULT kullanıyor)
+        // customer_id: null, // Açıkça null göndermeye gerek yok, entity'de nullable
         vehicle_id: vehicle.id,
         package_id: pkg.id,
         price: pkg.price,
         commission: 0, // Bireysel satışta komisyon yok
-        agency_commission: undefined,
-        branch_commission: undefined,
+        // agency_commission ve branch_commission null olacak (undefined göndermiyoruz)
         start_date: startDate,
         end_date: endDate,
         policy_number: policyNumber,
-        agency_id: undefined,
-        branch_id: undefined,
-        user_id: undefined,
+        // agency_id, branch_id, user_id null olacak (undefined göndermiyoruz)
       });
       await queryRunner.manager.save(sale);
 
@@ -462,8 +460,10 @@ export class UserCustomerService {
       }
 
       // 4. Pending durumda payment kaydı oluştur (callback'te güncellenecek)
+      // UserCustomer için agency_id null
       const payment = queryRunner.manager.create(Payment, {
         sale_id: sale.id,
+        // agency_id null - UserCustomer satışlarında acente yok
         amount: pkg.price,
         type: PaymentType.PAYTR,
         status: PaymentStatus.PENDING, // Callback'te COMPLETED veya FAILED olacak

@@ -1,17 +1,18 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 /**
- * Migration: Make vehicles.customer_id nullable
- * Foreign key'i önce kaldırıp, kolonu değiştirip, sonra tekrar ekliyoruz
+ * Migration: Make sales.customer_id nullable
+ * UserCustomer için satış oluştururken customer_id null olabilir
+ * customer_id veya user_customer_id'den biri dolu olmalı
  */
-export class MakeVehicleCustomerIdNullable1702200000011 implements MigrationInterface {
+export class MakeSaleCustomerIdNullable1702200000012 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Foreign key constraint ismini dinamik olarak bul
     const fkResult = await queryRunner.query(`
       SELECT CONSTRAINT_NAME 
       FROM information_schema.KEY_COLUMN_USAGE 
       WHERE TABLE_SCHEMA = DATABASE()
-        AND TABLE_NAME = 'vehicles' 
+        AND TABLE_NAME = 'sales' 
         AND COLUMN_NAME = 'customer_id' 
         AND REFERENCED_TABLE_NAME = 'customers'
       LIMIT 1
@@ -22,7 +23,7 @@ export class MakeVehicleCustomerIdNullable1702200000011 implements MigrationInte
     if (fkName) {
       // 1. Foreign key constraint'i kaldır
       await queryRunner.query(`
-        ALTER TABLE vehicles 
+        ALTER TABLE sales 
         DROP FOREIGN KEY ${fkName}
       `);
       console.log(`✅ Foreign key ${fkName} kaldırıldı.`);
@@ -30,15 +31,15 @@ export class MakeVehicleCustomerIdNullable1702200000011 implements MigrationInte
 
     // 2. Kolonu nullable yap
     await queryRunner.query(`
-      ALTER TABLE vehicles 
+      ALTER TABLE sales 
       MODIFY COLUMN customer_id VARCHAR(36) NULL
     `);
-    console.log('✅ vehicles.customer_id kolonu nullable yapıldı.');
+    console.log('✅ sales.customer_id kolonu nullable yapıldı.');
 
     // 3. Foreign key'i tekrar ekle (ON DELETE SET NULL ile)
     if (fkName) {
       await queryRunner.query(`
-        ALTER TABLE vehicles 
+        ALTER TABLE sales 
         ADD CONSTRAINT ${fkName} 
         FOREIGN KEY (customer_id) REFERENCES customers(id) 
         ON DELETE SET NULL
@@ -53,7 +54,7 @@ export class MakeVehicleCustomerIdNullable1702200000011 implements MigrationInte
       SELECT CONSTRAINT_NAME 
       FROM information_schema.KEY_COLUMN_USAGE 
       WHERE TABLE_SCHEMA = DATABASE()
-        AND TABLE_NAME = 'vehicles' 
+        AND TABLE_NAME = 'sales' 
         AND COLUMN_NAME = 'customer_id' 
         AND REFERENCED_TABLE_NAME = 'customers'
       LIMIT 1
@@ -64,7 +65,7 @@ export class MakeVehicleCustomerIdNullable1702200000011 implements MigrationInte
     if (fkName) {
       // Foreign key'i kaldır
       await queryRunner.query(`
-        ALTER TABLE vehicles 
+        ALTER TABLE sales 
         DROP FOREIGN KEY ${fkName}
       `);
     }
@@ -72,31 +73,32 @@ export class MakeVehicleCustomerIdNullable1702200000011 implements MigrationInte
     // NULL değerleri olan kayıtları kontrol et
     const nullCount = await queryRunner.query(`
       SELECT COUNT(*) as count 
-      FROM vehicles 
+      FROM sales 
       WHERE customer_id IS NULL AND user_customer_id IS NULL
     `);
 
     if (nullCount[0]?.count > 0) {
       throw new Error(
-        `Cannot make customer_id NOT NULL: ${nullCount[0].count} vehicles have both customer_id and user_customer_id as NULL`
+        `Cannot make customer_id NOT NULL: ${nullCount[0].count} sales have both customer_id and user_customer_id as NULL`
       );
     }
 
     // Kolonu NOT NULL yap
     await queryRunner.query(`
-      ALTER TABLE vehicles 
+      ALTER TABLE sales 
       MODIFY COLUMN customer_id VARCHAR(36) NOT NULL
     `);
 
     // Foreign key'i tekrar ekle
     if (fkName) {
       await queryRunner.query(`
-        ALTER TABLE vehicles 
+        ALTER TABLE sales 
         ADD CONSTRAINT ${fkName} 
         FOREIGN KEY (customer_id) REFERENCES customers(id)
       `);
     }
 
-    console.log('⬇️ vehicles.customer_id kolonu NOT NULL yapıldı.');
+    console.log('⬇️ sales.customer_id kolonu NOT NULL yapıldı.');
   }
 }
+

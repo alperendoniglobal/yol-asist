@@ -368,7 +368,8 @@ export class PaymentService {
     }
 
     // If balance payment, return to agency balance
-    if (payment.type === PaymentType.BALANCE) {
+    // agency_id nullable olduğu için kontrol et
+    if (payment.type === PaymentType.BALANCE && payment.agency_id) {
       const agency = await this.agencyRepository.findOne({
         where: { id: payment.agency_id },
       });
