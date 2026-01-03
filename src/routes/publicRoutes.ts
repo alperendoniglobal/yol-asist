@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { PublicController } from '../controllers/PublicController';
 import { DealerApplicationController } from '../controllers/DealerApplicationController';
+import { optionalUserCustomerAuth } from '../middlewares/optionalUserCustomerAuth';
 
 const router = Router();
 const publicController = new PublicController();
@@ -9,15 +10,18 @@ const dealerApplicationController = new DealerApplicationController();
 /**
  * Public API Routes
  * Bu route'lar authentication gerektirmez
+ * Ancak giriş yapmış kullanıcılar için ekstra bilgi (fiyat) döndürülür
  * Paketler, hizmetler ve satın alma işlemleri için kullanılır
  */
 
 // ===== PAKET ROUTES =====
-// Tüm aktif paketleri fiyatsız olarak getir
-router.get('/packages', publicController.getPackages);
+// Tüm aktif paketleri getir
+// Giriş yapmış kullanıcılar için fiyat dahil, yoksa fiyatsız
+router.get('/packages', optionalUserCustomerAuth, publicController.getPackages);
 
-// Tek bir paketi fiyatsız olarak getir
-router.get('/packages/:id', publicController.getPackageById);
+// Tek bir paketi getir
+// Giriş yapmış kullanıcılar için fiyat dahil, yoksa fiyatsız
+router.get('/packages/:id', optionalUserCustomerAuth, publicController.getPackageById);
 
 // ===== HİZMET ROUTES =====
 // Tüm unique hizmet başlıklarını getir (footer için)

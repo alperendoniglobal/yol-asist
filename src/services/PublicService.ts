@@ -69,16 +69,17 @@ export class PublicService {
   }
 
   /**
-   * Tüm aktif paketleri fiyatsız olarak getir
-   * Public sayfa için - fiyatlar gizli
+   * Tüm aktif paketleri getir
+   * Giriş yapmış kullanıcılar için fiyat dahil, yoksa fiyatsız
+   * @param includePrice Fiyat dahil edilsin mi? (giriş yapmış kullanıcılar için true)
    */
-  async getPackagesWithoutPrice() {
+  async getPackages(includePrice: boolean = false) {
     const packages = await this.packageRepository.find({
       where: { status: EntityStatus.ACTIVE },
       order: { vehicle_type: 'ASC', name: 'ASC' },
     });
 
-    // Her paket için covers'ları al ve fiyatı çıkar
+    // Her paket için covers'ları al
     const packagesWithCovers = await Promise.all(
       packages.map(async (pkg) => {
         const covers = await this.coverRepository.find({
@@ -86,8 +87,8 @@ export class PublicService {
           order: { sort_order: 'ASC' },
         });
 
-        // Fiyatsız paket verisi döndür
-        return {
+        // Giriş yapmış kullanıcılar için fiyat dahil, yoksa fiyatsız
+        const packageData: any = {
           id: pkg.id,
           name: pkg.name,
           description: pkg.description,
@@ -101,6 +102,13 @@ export class PublicService {
             // limit_amount gizli - sadece başlık ve kullanım sayısı
           })),
         };
+
+        // Giriş yapmış kullanıcılar için fiyat ekle
+        if (includePrice) {
+          packageData.price = pkg.price;
+        }
+
+        return packageData;
       }),
     );
 
@@ -108,9 +116,21 @@ export class PublicService {
   }
 
   /**
-   * Tek bir paketi fiyatsız olarak getir
+   * Tüm aktif paketleri fiyatsız olarak getir
+   * Public sayfa için - fiyatlar gizli
+   * @deprecated getPackages(false) kullanın
    */
-  async getPackageByIdWithoutPrice(id: string) {
+  async getPackagesWithoutPrice() {
+    return this.getPackages(false);
+  }
+
+  /**
+   * Tek bir paketi getir
+   * Giriş yapmış kullanıcılar için fiyat dahil, yoksa fiyatsız
+   * @param id Paket ID
+   * @param includePrice Fiyat dahil edilsin mi? (giriş yapmış kullanıcılar için true)
+   */
+  async getPackageById(id: string, includePrice: boolean = false) {
     const pkg = await this.packageRepository.findOne({
       where: { id, status: EntityStatus.ACTIVE },
     });
@@ -124,7 +144,7 @@ export class PublicService {
       order: { sort_order: 'ASC' },
     });
 
-    return {
+    const packageData: any = {
       id: pkg.id,
       name: pkg.name,
       description: pkg.description,
@@ -137,6 +157,21 @@ export class PublicService {
         usage_count: c.usage_count,
       })),
     };
+
+    // Giriş yapmış kullanıcılar için fiyat ekle
+    if (includePrice) {
+      packageData.price = pkg.price;
+    }
+
+    return packageData;
+  }
+
+  /**
+   * Tek bir paketi fiyatsız olarak getir
+   * @deprecated getPackageById(id, false) kullanın
+   */
+  async getPackageByIdWithoutPrice(id: string) {
+    return this.getPackageById(id, false);
   }
 
   /**

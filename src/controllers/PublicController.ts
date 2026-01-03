@@ -10,12 +10,15 @@ export class PublicController {
   private publicService = new PublicService();
 
   /**
-   * Tüm aktif paketleri fiyatsız olarak getir
+   * Tüm aktif paketleri getir
+   * Giriş yapmış kullanıcılar için fiyat dahil, yoksa fiyatsız
    * GET /api/v1/public/packages
    */
   getPackages = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const packages = await this.publicService.getPackagesWithoutPrice();
+      // Giriş yapmış kullanıcı varsa fiyat dahil et
+      const includePrice = !!req.userCustomer;
+      const packages = await this.publicService.getPackages(includePrice);
       res.json({
         success: true,
         data: packages,
@@ -26,13 +29,16 @@ export class PublicController {
   };
 
   /**
-   * Tek bir paketi fiyatsız olarak getir
+   * Tek bir paketi getir
+   * Giriş yapmış kullanıcılar için fiyat dahil, yoksa fiyatsız
    * GET /api/v1/public/packages/:id
    */
   getPackageById = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params;
-      const pkg = await this.publicService.getPackageByIdWithoutPrice(id);
+      // Giriş yapmış kullanıcı varsa fiyat dahil et
+      const includePrice = !!req.userCustomer;
+      const pkg = await this.publicService.getPackageById(id, includePrice);
       res.json({
         success: true,
         data: pkg,
