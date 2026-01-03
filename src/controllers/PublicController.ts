@@ -160,11 +160,11 @@ export class PublicController {
    */
   processPurchase = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { customer, vehicle, package_id, card, terms_accepted } = req.body;
+      const { customer, vehicle, package_id, terms_accepted, merchant_ok_url, merchant_fail_url } = req.body;
 
       // Zorunlu alan kontrolleri
-      if (!customer || !vehicle || !package_id || !card) {
-        throw new AppError(400, 'Müşteri, araç, paket ve kart bilgileri zorunludur');
+      if (!customer || !vehicle || !package_id) {
+        throw new AppError(400, 'Müşteri, araç ve paket bilgileri zorunludur');
       }
 
       if (!customer.name || !customer.surname || !customer.tc_vkn || !customer.phone) {
@@ -175,22 +175,19 @@ export class PublicController {
         throw new AppError(400, 'Plaka, model yılı, kullanım tipi ve araç türü zorunludur');
       }
 
-      if (!card.cardHolderName || !card.cardNumber || !card.expireMonth || !card.expireYear || !card.cvc) {
-        throw new AppError(400, 'Tüm kart bilgileri zorunludur');
-      }
-
       const result = await this.publicService.processPurchase({
         customer,
         vehicle,
         package_id,
-        card,
         terms_accepted: terms_accepted === true,
-      });
+        merchantOkUrl: merchant_ok_url,
+        merchantFailUrl: merchant_fail_url,
+      }, req);
 
       res.json({
         success: true,
         data: result,
-        message: 'Satın alma işlemi başarıyla tamamlandı',
+        message: 'PayTR token başarıyla alındı',
       });
     } catch (error) {
       next(error);

@@ -48,6 +48,22 @@ CORS_ORIGIN=*
 
 # Logging
 LOG_LEVEL=info
+
+# PayTR Ödeme Entegrasyonu
+# PayTR mağaza panelinden alacağınız bilgiler:
+# 1. https://www.paytr.com adresinden mağaza hesabı oluşturun
+# 2. Mağaza panelinde "Bilgi" veya "API Bilgileri" bölümünden:
+#    - Mağaza No (Merchant ID)
+#    - Mağaza Anahtarı (Merchant Key)
+#    - Mağaza Gizli Anahtarı (Merchant Salt)
+# 3. PayTR panelinde "Ayarlar" > "Bildirim URL" bölümüne:
+#    - Test: http://localhost:3000/api/v1/payments/paytr/callback
+#    - Canlı: https://yourdomain.com/api/v1/payments/paytr/callback
+PAYTR_MERCHANT_ID=
+PAYTR_MERCHANT_KEY=
+PAYTR_MERCHANT_SALT=
+PAYTR_NOTIFICATION_URL=http://localhost:3000/api/v1/payments/paytr/callback
+PAYTR_BASE_URL=https://www.paytr.com
 ```
 
 ### 4. TypeORM Migration Çalıştırma

@@ -241,26 +241,27 @@ export class UserCustomerController {
   purchase = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = req.userCustomerId;
-      const { package_id, vehicle, card, terms_accepted } = req.body;
+      const { package_id, vehicle, terms_accepted, merchant_ok_url, merchant_fail_url } = req.body;
 
       if (!userId) {
         throw new AppError(401, 'Kimlik doğrulama gerekli');
       }
 
-      if (!package_id || !vehicle || !card) {
-        throw new AppError(400, 'Paket, araç ve kart bilgileri gerekli');
+      if (!package_id || !vehicle) {
+        throw new AppError(400, 'Paket ve araç bilgileri gerekli');
       }
 
       const result = await this.userCustomerService.purchase(userId, {
         package_id,
         vehicle,
-        card,
         terms_accepted,
-      });
+        merchantOkUrl: merchant_ok_url,
+        merchantFailUrl: merchant_fail_url,
+      }, req);
 
       res.json({
         success: true,
-        message: 'Satın alma başarılı',
+        message: 'PayTR token başarıyla alındı',
         data: result,
       });
     } catch (error) {

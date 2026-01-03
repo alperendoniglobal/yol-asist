@@ -632,22 +632,22 @@ export class SaleService {
       // 4. ÖDEME İŞLEMİ
       let payment: Payment;
 
-      if (input.payment.type === PaymentType.IYZICO) {
-        // Kredi kartı ödemesi (şimdilik simüle ediyoruz)
-        // Gerçek uygulamada burada iyzico API çağrısı yapılır
-        // Hata olursa exception fırlatılır ve transaction geri alınır
+      if (input.payment.type === PaymentType.PAYTR) {
+        // PayTR ödemesi - asenkron çalışır
+        // Token alma işlemi ayrı bir endpoint'te yapılır
+        // Burada sadece pending durumda payment kaydı oluşturulur
+        // Callback'te güncellenecek
         
         payment = queryRunner.manager.create(Payment, {
           sale_id: sale.id,
           agency_id: input.agency_id || undefined,  // null yerine undefined kullan
           amount: input.sale.price,
-          type: PaymentType.IYZICO,
-          status: PaymentStatus.COMPLETED,
-          transaction_id: 'IYZICO_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
+          type: PaymentType.PAYTR,
+          status: PaymentStatus.PENDING, // Callback'te COMPLETED veya FAILED olacak
+          transaction_id: 'PAYTR_PENDING_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
           payment_details: {
-            card_holder: input.payment.cardDetails?.cardHolderName,
-            card_last_four: input.payment.cardDetails?.cardNumber?.slice(-4),
-            payment_date: new Date().toISOString(),
+            payment_initiated_at: new Date().toISOString(),
+            note: 'Payment will be processed via PayTR callback',
           },
         });
       } else {

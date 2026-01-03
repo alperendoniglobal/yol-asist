@@ -10,7 +10,7 @@ Multi-tenant SaaS backend for insurance management platform built with Node.js, 
 - **Support System**: Built-in ticket and messaging system
 - **Statistics & Analytics**: Comprehensive dashboard and reporting
 - **Secure Authentication**: JWT-based authentication with refresh tokens
-- **Payment Integration**: Iyzico payment gateway integration
+- **Payment Integration**: PayTR payment gateway integration
 
 ## Tech Stack
 
@@ -163,7 +163,8 @@ See [SEEDING.md](SEEDING.md) for detailed information.
 
 ### Payments
 - `GET /api/v1/payments` - List payments
-- `POST /api/v1/payments/iyzico` - Process Iyzico payment
+- `POST /api/v1/payments/paytr/token` - Get PayTR iframe token
+- `POST /api/v1/payments/paytr/callback` - PayTR payment callback (public endpoint)
 - `POST /api/v1/payments/balance` - Process balance payment
 - `POST /api/v1/payments/:id/refund` - Refund payment
 

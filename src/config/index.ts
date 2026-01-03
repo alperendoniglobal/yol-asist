@@ -1,6 +1,8 @@
 import dotenv from 'dotenv';
+import * as path from 'path';
 
-dotenv.config();
+// .env dosyasını backend klasöründen oku
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 export const config = {
   port: parseInt(process.env.PORT || '3000'),
@@ -27,9 +29,11 @@ export const config = {
     credentials: true,
   },
 
-  iyzico: {
-    apiKey: process.env.IYZICO_API_KEY || '',
-    secretKey: process.env.IYZICO_SECRET_KEY || '',
-    baseUrl: process.env.IYZICO_BASE_URL || 'https://sandbox-api.iyzipay.com',
+  paytr: {
+    merchantId: process.env.PAYTR_MERCHANT_ID || '',
+    merchantKey: process.env.PAYTR_MERCHANT_KEY || '',
+    merchantSalt: process.env.PAYTR_MERCHANT_SALT || '',
+    baseUrl: process.env.PAYTR_BASE_URL || 'https://www.paytr.com',
+    notificationUrl: process.env.PAYTR_NOTIFICATION_URL || '',
   },
 };

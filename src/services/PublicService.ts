@@ -13,7 +13,7 @@ import { User } from '../entities/User';
 import { DealerApplication } from '../entities/DealerApplication';
 import { AppError } from '../middlewares/errorHandler';
 import { EntityStatus, PaymentType, PaymentStatus, UsageType } from '../types/enums';
-import { IyzicoService } from './IyzicoService';
+import { PayTRService } from './PayTRService';
 
 /**
  * Public API Servisi
@@ -33,7 +33,7 @@ export class PublicService {
   private motorModelRepository = AppDataSource.getRepository(MotorModel);
   private userRepository = AppDataSource.getRepository(User);
   private dealerApplicationRepository = AppDataSource.getRepository(DealerApplication);
-  private iyzicoService = new IyzicoService();
+  private paytrService = new PayTRService();
 
   /**
    * TC Kimlik No kontrolü - Satın alma için
@@ -192,8 +192,10 @@ export class PublicService {
   }
 
   /**
-   * Kullanıcı satın alma işlemi
-   * Müşteri bilgileri + araç bilgileri + paket + iyzico ödeme
+   * Kullanıcı satın alma işlemi başlatma
+   * Müşteri bilgileri + araç bilgileri + paket + PayTR token alma
+   * PayTR asenkron çalışır, bu metod sadece token döndürür
+   * Ödeme işlemi callback'te yapılacak
    */
   async processPurchase(input: {
     // Müşteri bilgileri
@@ -221,17 +223,14 @@ export class PublicService {
     };
     // Paket
     package_id: string;
-    // İyzico ödeme bilgileri
-    card: {
-      cardHolderName: string;
-      cardNumber: string;
-      expireMonth: string;
-      expireYear: string;
-      cvc: string;
-    };
     // Sözleşme onayı
     terms_accepted: boolean;
-  }) {
+    // PayTR için URL'ler
+    merchantOkUrl?: string;
+    merchantFailUrl?: string;
+    // Kullanıcı IP (req'den alınacak)
+    userIp?: string;
+  }, req?: any) {
     // Sözleşme onayı kontrolü
     if (!input.terms_accepted) {
       throw new AppError(400, 'Mesafeli satış sözleşmesini onaylamanız gerekmektedir');
@@ -328,67 +327,58 @@ export class PublicService {
       });
       await queryRunner.manager.save(sale);
 
-      // 4. İyzico ile ödeme işlemi
-      const paymentResult = await this.iyzicoService.processPayment({
-        price: parseFloat(pkg.price.toString()),
-        currency: 'TRY',
-        conversationId: sale.id,
-        paymentCard: {
-          cardHolderName: input.card.cardHolderName,
-          cardNumber: input.card.cardNumber,
-          expireMonth: input.card.expireMonth,
-          expireYear: input.card.expireYear,
-          cvc: input.card.cvc,
+      // 4. PayTR token alma (iFrame için)
+      // Kullanıcı IP adresini al
+      const userIp = input.userIp || (req ? this.paytrService.getUserIp(req) : '127.0.0.1');
+
+      // Ödeme tutarını kuruş cinsine çevir (100 ile çarp)
+      const paymentAmount = Math.round(parseFloat(pkg.price.toString()) * 100);
+
+      // Sepet içeriği oluştur
+      const basketItems = [
+        {
+          name: pkg.name,
+          price: parseFloat(pkg.price.toString()),
+          quantity: 1,
         },
-        buyer: {
-          id: customer.id,
-          name: customer.name,
-          surname: customer.surname || '',
-          email: customer.email || 'no-email@example.com',
-          phone: customer.phone,
-        },
-        shippingAddress: {
-          contactName: `${customer.name} ${customer.surname || ''}`,
-          city: customer.city || 'İstanbul',
-          country: 'Turkey',
-          address: customer.address || customer.city || 'Türkiye',
-        },
-        billingAddress: {
-          contactName: `${customer.name} ${customer.surname || ''}`,
-          city: customer.city || 'İstanbul',
-          country: 'Turkey',
-          address: customer.address || customer.city || 'Türkiye',
-        },
-        basketItems: [
-          {
-            id: pkg.id,
-            name: pkg.name,
-            category1: 'Yol Yardım Paketi',
-            itemType: 'VIRTUAL',
-            price: parseFloat(pkg.price.toString()),
-          },
-        ],
+      ];
+      const userBasket = this.paytrService.createBasket(basketItems);
+
+      // PayTR token al
+      const tokenResult = await this.paytrService.getToken({
+        merchantOid: sale.id,
+        email: customer.email || 'customer@example.com',
+        paymentAmount: paymentAmount,
+        currency: 'TL',
+        userBasket: userBasket,
+        userIp: userIp,
+        userName: `${customer.name} ${customer.surname || ''}`,
+        userAddress: customer.address || customer.city || '',
+        userPhone: customer.phone || '',
+        merchantOkUrl: input.merchantOkUrl || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/success`,
+        merchantFailUrl: input.merchantFailUrl || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/fail`,
+        noInstallment: 0,
+        maxInstallment: 0,
+        timeoutLimit: 30,
+        lang: 'tr',
+        testMode: process.env.NODE_ENV === 'development' ? 1 : 0,
+        debugOn: process.env.NODE_ENV === 'development' ? 1 : 0,
       });
 
-      if (paymentResult.status !== 'success') {
-        throw new AppError(400, paymentResult.errorMessage || 'Ödeme işlemi başarısız oldu');
+      if (tokenResult.status !== 'success' || !tokenResult.token) {
+        throw new AppError(400, tokenResult.reason || 'PayTR token alınamadı');
       }
 
-      // 5. Payment kaydı oluştur
+      // 5. Pending durumda payment kaydı oluştur (callback'te güncellenecek)
       const payment = queryRunner.manager.create(Payment, {
         sale_id: sale.id,
         amount: pkg.price,
-        type: PaymentType.IYZICO,
-        status: PaymentStatus.COMPLETED,
-        transaction_id: paymentResult.paymentId,
+        type: PaymentType.PAYTR,
+        status: PaymentStatus.PENDING, // Callback'te COMPLETED veya FAILED olacak
+        transaction_id: `PAYTR_PENDING_${sale.id}_${Date.now()}`,
         payment_details: {
-          card_holder: input.card.cardHolderName,
-          card_last_four: input.card.cardNumber.slice(-4),
-          payment_date: new Date().toISOString(),
-          iyzico_response: {
-            paymentId: paymentResult.paymentId,
-            conversationId: paymentResult.conversationId,
-          },
+          paytr_token: tokenResult.token,
+          payment_initiated_at: new Date().toISOString(),
         },
       });
       await queryRunner.manager.save(payment);
@@ -399,6 +389,8 @@ export class PublicService {
       return {
         success: true,
         sale_id: sale.id,
+        token: tokenResult.token,
+        iframe_url: `https://www.paytr.com/odeme/guvenli/${tokenResult.token}`,
         policy_number: policyNumber,
         customer_name: `${customer.name} ${customer.surname || ''}`,
         vehicle_plate: vehicle.plate,

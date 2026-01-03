@@ -155,7 +155,7 @@ export const seedContent = async () => {
       {
         icon_name: 'CreditCard',
         title: 'Ödeme Entegrasyonu',
-        description: 'Iyzico ile güvenli ödeme alın. Kredi kartı, havale ve bakiye ile ödeme seçenekleri.',
+        description: 'PayTR ile güvenli ödeme alın. Kredi kartı, havale ve bakiye ile ödeme seçenekleri.',
         gradient: 'from-cyan-500 via-cyan-600 to-blue-700',
         order: 4,
         is_active: true,

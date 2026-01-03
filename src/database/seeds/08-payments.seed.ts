@@ -25,9 +25,9 @@ export const seedPayments = async () => {
     // agency_id null kontrolü
     if (!sale.agency_id) continue;
 
-    // Random payment type (60% Iyzico, 40% Balance)
-    const isIyzico = Math.random() < 0.6;
-    const paymentType = isIyzico ? PaymentType.IYZICO : PaymentType.BALANCE;
+    // Random payment type (60% PayTR, 40% Balance)
+    const isPaytr = Math.random() < 0.6;
+    const paymentType = isPaytr ? PaymentType.PAYTR : PaymentType.BALANCE;
 
     // 95% completed, 5% pending
     const isCompleted = Math.random() < 0.95;
@@ -43,7 +43,7 @@ export const seedPayments = async () => {
       payment_details: {
         payment_method: paymentType,
         transaction_date: new Date().toISOString(),
-        ...(isIyzico && {
+        ...(isPaytr && {
           card_family: ['World', 'Maximum', 'Axess', 'Bonus'][Math.floor(Math.random() * 4)],
           card_type: 'CREDIT_CARD',
           installment: [1, 3, 6, 9, 12][Math.floor(Math.random() * 5)],

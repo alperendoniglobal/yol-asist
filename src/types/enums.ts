@@ -27,7 +27,7 @@ export enum UsageType {
 }
 
 export enum PaymentType {
-  IYZICO = 'IYZICO',
+  PAYTR = 'PAYTR',
   BALANCE = 'BALANCE'
 }
 

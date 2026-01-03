@@ -6,14 +6,14 @@ import { Customer } from '../entities/Customer';
 import { AppError } from '../middlewares/errorHandler';
 import { applyTenantFilter } from '../middlewares/tenantMiddleware';
 import { PaymentType, PaymentStatus } from '../types/enums';
-import { IyzicoService } from './IyzicoService';
+import { PayTRService } from './PayTRService';
 
 export class PaymentService {
   private paymentRepository = AppDataSource.getRepository(Payment);
   private agencyRepository = AppDataSource.getRepository(Agency);
   private saleRepository = AppDataSource.getRepository(Sale);
   private customerRepository = AppDataSource.getRepository(Customer);
-  private iyzicoService = new IyzicoService();
+  private paytrService = new PayTRService();
 
   async getAll(filter?: any) {
     const queryBuilder = this.paymentRepository
@@ -60,10 +60,20 @@ export class PaymentService {
     return payment;
   }
 
-  async processIyzico(saleId: string, paymentData: any) {
+  /**
+   * PayTR token alma (iFrame için)
+   * PayTR asenkron çalışır, bu metod sadece token döndürür
+   * Ödeme işlemi callback'te yapılacak
+   */
+  async getPaytrToken(saleId: string, req: any, options?: {
+    merchantOkUrl?: string;
+    merchantFailUrl?: string;
+    noInstallment?: number;
+    maxInstallment?: number;
+  }) {
     const sale = await this.saleRepository.findOne({
       where: { id: saleId },
-      relations: ['customer', 'vehicle', 'agency'],
+      relations: ['customer', 'vehicle', 'agency', 'package'],
     });
 
     if (!sale) {
@@ -71,7 +81,6 @@ export class PaymentService {
     }
 
     // Customer veya UserCustomer kontrolü
-    // Sale'da customer_id veya user_customer_id olabilir
     if (!sale.customer_id && !sale.user_customer_id) {
       throw new AppError(404, 'Customer not found');
     }
@@ -82,88 +91,63 @@ export class PaymentService {
         })
       : null;
 
-    // UserCustomer için ödeme henüz desteklenmiyor bu service'de
-    // UserCustomerService.purchase() içinden yapılıyor
     if (!customer) {
       throw new AppError(404, 'Customer not found');
     }
-
-    // Prepare Iyzico payment request
-    const iyzicoRequest = {
-      price: paymentData.amount,
-      currency: 'TRY',
-      conversationId: `SALE_${saleId}_${Date.now()}`,
-      buyer: {
-        id: customer.id,
-        name: customer.name,
-        surname: customer.surname,
-        email: customer.email || 'customer@example.com',
-        phone: customer.phone,
-      },
-      shippingAddress: {
-        contactName: `${customer.name} ${customer.surname}`,
-        city: 'Istanbul',
-        country: 'Turkey',
-        address: customer.address || 'Address not provided',
-      },
-      billingAddress: {
-        contactName: `${customer.name} ${customer.surname}`,
-        city: 'Istanbul',
-        country: 'Turkey',
-        address: customer.address || 'Address not provided',
-      },
-      basketItems: [
-        {
-          id: sale.package_id,
-          name: 'Sigorta Policesi',
-          category1: 'Insurance',
-          itemType: 'PHYSICAL',
-          price: paymentData.amount,
-        },
-      ],
-      paymentCard: {
-        cardHolderName: paymentData.cardHolderName || 'Test User',
-        cardNumber: paymentData.cardNumber.replace(/\s/g, ''),
-        expireMonth: paymentData.expireMonth,
-        expireYear: paymentData.expireYear,
-        cvc: paymentData.cvc,
-      },
-      installment: paymentData.installment || 1,
-    };
 
     // Sistem kaydı kontrolü - agency_id yoksa ödeme alınamaz
     if (!sale.agency_id) {
       throw new AppError(400, 'Sistem kayıtları için ödeme işlemi yapılamaz. Lütfen bir acenteye atayın.');
     }
 
-    // Process payment with Iyzico
-    const iyzicoResponse = await this.iyzicoService.processPayment(iyzicoRequest);
+    // Kullanıcı IP adresini al
+    const userIp = this.paytrService.getUserIp(req);
 
-    // Create payment record
-    const payment = this.paymentRepository.create({
-      sale_id: saleId,
-      agency_id: sale.agency_id, // Artık kesinlikle string (null değil)
-      amount: paymentData.amount,
-      type: PaymentType.IYZICO,
-      status: iyzicoResponse.status === 'success' 
-        ? PaymentStatus.COMPLETED 
-        : PaymentStatus.FAILED,
-      transaction_id: iyzicoResponse.paymentId || `IYZICO_${Date.now()}`,
-      payment_details: {
-        iyzicoResponse,
-        cardLastFour: paymentData.cardNumber.slice(-4),
-        installment: paymentData.installment || 1,
+    // Ödeme tutarını kuruş cinsine çevir (100 ile çarp)
+    // sale.price string olarak gelebilir, number'a çevir
+    const salePrice = typeof sale.price === 'string' ? parseFloat(sale.price) : (sale.price || 0);
+    const paymentAmount = Math.round(salePrice * 100);
+
+    // Sepet içeriği oluştur
+    const basketItems = [
+      {
+        name: sale.package?.name || 'Paket',
+        price: salePrice, // Number olarak gönder
+        quantity: 1,
       },
+    ];
+    const userBasket = this.paytrService.createBasket(basketItems);
+
+    // PayTR token al
+    const tokenResult = await this.paytrService.getToken({
+      merchantOid: saleId,
+      email: customer.email || 'customer@example.com',
+      paymentAmount: paymentAmount,
+      currency: 'TL',
+      userBasket: userBasket,
+      userIp: userIp,
+      userName: `${customer.name} ${customer.surname}`,
+      // PayTR user_address zorunlu, boşsa varsayılan değer gönder
+      userAddress: customer.address || customer.city || 'Belirtilmemiş',
+      userPhone: customer.phone || '',
+      merchantOkUrl: options?.merchantOkUrl || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/success`,
+      merchantFailUrl: options?.merchantFailUrl || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/fail`,
+      noInstallment: options?.noInstallment ?? 0,
+      maxInstallment: options?.maxInstallment ?? 0,
+      timeoutLimit: 30,
+      lang: 'tr',
+      testMode: process.env.NODE_ENV === 'development' ? 1 : 0,
+      debugOn: process.env.NODE_ENV === 'development' ? 1 : 0,
     });
 
-    await this.paymentRepository.save(payment);
-
-    // If payment failed, throw error
-    if (iyzicoResponse.status !== 'success') {
-      throw new AppError(400, iyzicoResponse.errorMessage || 'Payment failed');
+    if (tokenResult.status !== 'success' || !tokenResult.token) {
+      throw new AppError(400, tokenResult.reason || 'PayTR token alınamadı');
     }
 
-    return payment;
+    return {
+      token: tokenResult.token,
+      iframeUrl: `https://www.paytr.com/odeme/guvenli/${tokenResult.token}`,
+    };
   }
 
   async processBalance(saleId: string, paymentData: any) {
@@ -224,6 +208,143 @@ export class PaymentService {
 
     await this.paymentRepository.save(payment);
     return payment;
+  }
+
+  /**
+   * PayTR bildirim callback işleme
+   * PayTR ödeme sonucunu bildirir, bu metod hash doğrulayıp ödeme kaydını günceller
+   */
+  async handlePaytrCallback(callbackData: {
+    merchant_oid: string;
+    status: string;
+    total_amount: string;
+    hash: string;
+    failed_reason_code?: string;
+    failed_reason_msg?: string;
+    test_mode?: string;
+    payment_type?: string;
+    currency?: string;
+    payment_amount?: string;
+  }): Promise<{ success: boolean; message: string }> {
+    // Hash doğrulama (güvenlik için kritik)
+    // PayTR bildirim hash formülü: merchant_oid + merchant_salt + status + total_amount
+    const isValidHash = this.paytrService.verifyCallbackHash(
+      callbackData.merchant_oid,
+      callbackData.status,
+      callbackData.total_amount,
+      callbackData.hash
+    );
+
+    if (!isValidHash) {
+      // Test modunda hash kontrolünü atla (sadece development için)
+      if (process.env.NODE_ENV === 'development' && !callbackData.hash) {
+        console.warn('Hash validation skipped in development mode (no hash provided)');
+      } else {
+        throw new AppError(400, 'Invalid hash - notification rejected');
+      }
+    }
+
+    // Sale'ı bul (merchant_oid = sale_id, ama PayTR'den gelen merchant_oid tire içermez)
+    // UUID formatına geri çevir: 8-4-4-4-12 karakter grupları
+    const sanitizedOid = callbackData.merchant_oid;
+    const uuidFormat = `${sanitizedOid.substring(0, 8)}-${sanitizedOid.substring(8, 12)}-${sanitizedOid.substring(12, 16)}-${sanitizedOid.substring(16, 20)}-${sanitizedOid.substring(20)}`;
+    
+    const sale = await this.saleRepository.findOne({
+      where: { id: uuidFormat },
+      relations: ['agency'],
+    });
+
+    if (!sale) {
+      throw new AppError(404, 'Sale not found');
+    }
+
+    // Mevcut ödeme kaydını kontrol et (idempotent işlem için)
+    let payment = await this.paymentRepository.findOne({
+      where: { sale_id: uuidFormat },
+      order: { created_at: 'DESC' },
+    });
+
+    // Eğer ödeme zaten onaylandıysa veya iptal edildiyse, sadece OK döndür
+    if (payment && (payment.status === PaymentStatus.COMPLETED || payment.status === PaymentStatus.FAILED)) {
+      return { success: true, message: 'Payment already processed' };
+    }
+
+    // Ödeme tutarını parse et (kuruş cinsinden gelir, TL'ye çevir)
+    const totalAmount = parseFloat(callbackData.total_amount) / 100;
+    const paymentAmount = callbackData.payment_amount 
+      ? parseFloat(callbackData.payment_amount) / 100 
+      : totalAmount;
+
+    if (callbackData.status === 'success') {
+      // Ödeme başarılı
+      if (!payment) {
+        // Yeni ödeme kaydı oluştur
+        payment = this.paymentRepository.create({
+          sale_id: uuidFormat,
+          agency_id: sale.agency_id || undefined,
+          amount: totalAmount,
+          type: PaymentType.PAYTR,
+          status: PaymentStatus.COMPLETED,
+          transaction_id: `PAYTR_${callbackData.merchant_oid}_${Date.now()}`,
+          payment_details: {
+            paytr_response: callbackData,
+            total_amount: totalAmount,
+            payment_amount: paymentAmount,
+            payment_type: callbackData.payment_type,
+            currency: callbackData.currency || 'TL',
+            test_mode: callbackData.test_mode === '1',
+          },
+        });
+      } else {
+        // Mevcut ödeme kaydını güncelle
+        payment.status = PaymentStatus.COMPLETED;
+        payment.amount = totalAmount;
+        payment.transaction_id = payment.transaction_id || `PAYTR_${callbackData.merchant_oid}_${Date.now()}`;
+        payment.payment_details = {
+          ...payment.payment_details,
+          paytr_response: callbackData,
+          total_amount: totalAmount,
+          payment_amount: paymentAmount,
+          payment_type: callbackData.payment_type,
+          currency: callbackData.currency || 'TL',
+          test_mode: callbackData.test_mode === '1',
+        };
+      }
+
+      await this.paymentRepository.save(payment);
+      return { success: true, message: 'Payment completed successfully' };
+    } else {
+      // Ödeme başarısız
+      if (!payment) {
+        payment = this.paymentRepository.create({
+          sale_id: uuidFormat,
+          agency_id: sale.agency_id || undefined,
+          amount: paymentAmount,
+          type: PaymentType.PAYTR,
+          status: PaymentStatus.FAILED,
+          transaction_id: `PAYTR_FAILED_${callbackData.merchant_oid}_${Date.now()}`,
+          payment_details: {
+            paytr_response: callbackData,
+            failed_reason_code: callbackData.failed_reason_code,
+            failed_reason_msg: callbackData.failed_reason_msg,
+            payment_amount: paymentAmount,
+            currency: callbackData.currency || 'TL',
+            test_mode: callbackData.test_mode === '1',
+          },
+        });
+      } else {
+        payment.status = PaymentStatus.FAILED;
+        payment.payment_details = {
+          ...payment.payment_details,
+          paytr_response: callbackData,
+          failed_reason_code: callbackData.failed_reason_code,
+          failed_reason_msg: callbackData.failed_reason_msg,
+        };
+      }
+
+      await this.paymentRepository.save(payment);
+      return { success: true, message: 'Payment failed - recorded' };
+    }
   }
 
   async refund(paymentId: string) {

@@ -37,7 +37,7 @@ router.get('/motor-models/:brandId', publicController.getMotorModels);
 router.get('/check-tc/:tc', publicController.checkTc);
 
 // ===== SATIN ALMA ROUTES =====
-// Kullanıcı satın alma işlemi (iyzico ödeme)
+// Kullanıcı satın alma işlemi (PayTR ödeme)
 router.post('/purchase', publicController.processPurchase);
 
 // ===== BAYİLİK BAŞVURU ROUTES =====
