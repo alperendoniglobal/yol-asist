@@ -430,6 +430,12 @@ export class UserCustomerService {
       ];
       const userBasket = this.paytrService.createBasket(basketItems);
 
+      // merchant_ok_url ve merchant_fail_url'e sale_id'yi query parameter olarak ekle
+      const baseOkUrl = input.merchantOkUrl || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/success`;
+      const baseFailUrl = input.merchantFailUrl || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/fail`;
+      const merchantOkUrl = `${baseOkUrl}${baseOkUrl.includes('?') ? '&' : '?'}sale_id=${sale.id}`;
+      const merchantFailUrl = `${baseFailUrl}${baseFailUrl.includes('?') ? '&' : '?'}sale_id=${sale.id}`;
+
       // PayTR token al
       const tokenResult = await this.paytrService.getToken({
         merchantOid: sale.id,
@@ -441,8 +447,8 @@ export class UserCustomerService {
         userName: `${userCustomer.name} ${userCustomer.surname}`,
         userAddress: userCustomer.address || userCustomer.city || '',
         userPhone: userCustomer.phone || '',
-        merchantOkUrl: input.merchantOkUrl || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/success`,
-        merchantFailUrl: input.merchantFailUrl || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/fail`,
+        merchantOkUrl: merchantOkUrl,
+        merchantFailUrl: merchantFailUrl,
         noInstallment: 0,
         maxInstallment: 0,
         timeoutLimit: 30,
