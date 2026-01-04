@@ -78,21 +78,15 @@ export class PaymentService {
     // PayTR'den gelen merchant_oid sanitize edilmiş olabilir
     // Payment_details'te hem temp_merchant_oid (orijinal) hem de sanitized_merchant_oid (sanitize edilmiş) var
     // transaction_id artık sanitize edilmiş merchant_oid ile oluşturuluyor
+    // MySQL'de JSON_EXTRACT tırnaklı döndürür, bu yüzden ->> operatörü kullanmalıyız
     console.log('🔍 Searching for payment with saleIdOrTempOid:', saleIdOrTempOid);
     
     let payment = await this.paymentRepository
       .createQueryBuilder('payment')
-      .where('JSON_EXTRACT(payment.payment_details, "$.sanitized_merchant_oid") = :oid', { 
-        oid: saleIdOrTempOid 
-      })
-      .orWhere('JSON_EXTRACT(payment.payment_details, "$.temp_merchant_oid") = :oid', { 
-        oid: saleIdOrTempOid 
-      })
-      .orWhere('payment.transaction_id LIKE :transactionId', { 
-        transactionId: `PAYTR_PENDING_${saleIdOrTempOid}_%` 
-      })
-      .orWhere('payment.sale_id = :saleId', { 
-        saleId: saleIdOrTempOid 
+      .where('(payment.payment_details IS NOT NULL AND (payment.payment_details->>"$.sanitized_merchant_oid" = :oid OR payment.payment_details->>"$.temp_merchant_oid" = :oid)) OR payment.transaction_id LIKE :transactionId OR payment.sale_id = :saleId', { 
+        oid: saleIdOrTempOid,
+        transactionId: `PAYTR_PENDING_${saleIdOrTempOid}_%`,
+        saleId: saleIdOrTempOid
       })
       .orderBy('payment.created_at', 'DESC')
       .getOne();
@@ -105,14 +99,9 @@ export class PaymentService {
         console.log('🔍 Searching with sanitized ID:', sanitizedOid);
         payment = await this.paymentRepository
           .createQueryBuilder('payment')
-          .where('JSON_EXTRACT(payment.payment_details, "$.sanitized_merchant_oid") = :oid', { 
-            oid: sanitizedOid 
-          })
-          .orWhere('JSON_EXTRACT(payment.payment_details, "$.temp_merchant_oid") = :oid', { 
-            oid: sanitizedOid 
-          })
-          .orWhere('payment.transaction_id LIKE :transactionId', { 
-            transactionId: `PAYTR_PENDING_${sanitizedOid}_%` 
+          .where('(payment.payment_details IS NOT NULL AND (payment.payment_details->>"$.sanitized_merchant_oid" = :oid OR payment.payment_details->>"$.temp_merchant_oid" = :oid)) OR payment.transaction_id LIKE :transactionId', { 
+            oid: sanitizedOid,
+            transactionId: `PAYTR_PENDING_${sanitizedOid}_%`
           })
           .orderBy('payment.created_at', 'DESC')
           .getOne();
@@ -254,6 +243,8 @@ export class PaymentService {
     const merchantFailUrl = `${baseFailUrl}${baseFailUrl.includes('?') ? '&' : '?'}merchant_oid=${saleIdOrTempOid}`;
 
     // PayTR token al
+    // ÖNEMLİ: PayTRService.getToken içinde merchant_oid tekrar sanitize ediliyor
+    // Bu yüzden PayTR'ye gönderilen gerçek merchant_oid'yi payment kaydına kaydetmemiz gerekiyor
     const tokenResult = await this.paytrService.getToken({
       merchantOid: saleIdOrTempOid,
       email: customer.email || 'customer@example.com',
@@ -284,6 +275,18 @@ export class PaymentService {
         email: customer.email,
       });
       throw new AppError(400, tokenResult.reason || 'PayTR token alınamadı');
+    }
+
+    // PayTR'ye gönderilen merchant_oid'yi payment kaydına kaydet
+    // PayTRService.getToken içinde merchant_oid sanitize ediliyor, bu yüzden sanitize edilmiş versiyonu kaydet
+    if (payment) {
+      const paytrSentMerchantOid = this.paytrService.sanitizeMerchantOid(saleIdOrTempOid);
+      payment.payment_details = payment.payment_details || {};
+      payment.payment_details.paytr_sent_merchant_oid = paytrSentMerchantOid; // PayTR'ye gönderilen gerçek merchant_oid
+      payment.payment_details.paytr_token = tokenResult.token;
+      payment.payment_details.token_requested_at = new Date().toISOString();
+      await this.paymentRepository.save(payment);
+      console.log('✅ Payment kaydı güncellendi - PayTR merchant_oid kaydedildi:', paytrSentMerchantOid);
     }
 
     return {
@@ -397,33 +400,105 @@ export class PaymentService {
     // Ama payment_details'teki temp_merchant_oid sanitize edilmemiş olarak saklanıyor
     const merchantOid = callbackData.merchant_oid;
     
+    console.log('🔍 Searching for payment with merchant_oid:', merchantOid);
+    
+    // MySQL'de JSON_EXTRACT tırnaklı döndürür, bu yüzden JSON_UNQUOTE veya ->> operatörü kullanmalıyız
+    // ->> operatörü otomatik olarak unquote eder ve string döndürür
     // PayTR'den gelen merchant_oid sanitize edilmiş (özel karakterler kaldırılmış)
     // Payment_details'te hem temp_merchant_oid (orijinal) hem de sanitized_merchant_oid (sanitize edilmiş) var
-    // Önce sanitized_merchant_oid ile dene
+    
+    // Önce sanitized_merchant_oid ile dene (en yaygın durum)
+    // payment_details NULL olabilir, bu yüzden NULL kontrolü ekliyoruz
+    // MySQL'de ->> operatörü JSON değerini otomatik olarak unquote eder
+    // PayTR'ye gönderilen merchant_oid'yi de kontrol et (paytr_sent_merchant_oid)
     let payment = await this.paymentRepository
       .createQueryBuilder('payment')
-      .where('JSON_EXTRACT(payment.payment_details, "$.sanitized_merchant_oid") = :oid', { oid: merchantOid })
-      .orWhere('JSON_EXTRACT(payment.payment_details, "$.temp_merchant_oid") = :oid', { oid: merchantOid })
-      .orWhere('payment.transaction_id LIKE :transactionId', { transactionId: `PAYTR_PENDING_${merchantOid}_%` })
+      .where('payment.type = :type', { type: PaymentType.PAYTR })
+      .andWhere(
+        '(payment.payment_details IS NOT NULL AND (payment.payment_details->>"$.sanitized_merchant_oid" = :oid OR payment.payment_details->>"$.temp_merchant_oid" = :oid OR payment.payment_details->>"$.paytr_sent_merchant_oid" = :oid)) OR payment.transaction_id LIKE :transactionId',
+        { 
+          oid: merchantOid,
+          transactionId: `PAYTR_PENDING_${merchantOid}_%`
+        }
+      )
       .orderBy('payment.created_at', 'DESC')
       .getOne();
     
     // Eğer bulunamazsa, merchant_oid'yi sanitize et ve tekrar dene
     if (!payment) {
+      console.log('⚠️ Payment not found with original merchant_oid, trying sanitized version...');
       const sanitizedOid = merchantOid.replace(/[^a-zA-Z0-9]/g, '');
       if (sanitizedOid !== merchantOid) {
+        console.log('🔍 Searching with sanitized merchant_oid:', sanitizedOid);
         payment = await this.paymentRepository
           .createQueryBuilder('payment')
-          .where('JSON_EXTRACT(payment.payment_details, "$.sanitized_merchant_oid") = :oid', { oid: sanitizedOid })
-          .orWhere('JSON_EXTRACT(payment.payment_details, "$.temp_merchant_oid") = :oid', { oid: sanitizedOid })
-          .orWhere('payment.transaction_id LIKE :transactionId', { transactionId: `PAYTR_PENDING_${sanitizedOid}_%` })
+          .where('payment.type = :type', { type: PaymentType.PAYTR })
+          .andWhere(
+            '(payment.payment_details IS NOT NULL AND (payment.payment_details->>"$.sanitized_merchant_oid" = :oid OR payment.payment_details->>"$.temp_merchant_oid" = :oid OR payment.payment_details->>"$.paytr_sent_merchant_oid" = :oid)) OR payment.transaction_id LIKE :transactionId',
+            { 
+              oid: sanitizedOid,
+              transactionId: `PAYTR_PENDING_${sanitizedOid}_%`
+            }
+          )
           .orderBy('payment.created_at', 'DESC')
           .getOne();
       }
     }
     
+    // Eğer hala bulunamazsa, tüm status'lerdeki payment'ları kontrol et (debug için)
+    if (!payment) {
+      console.log('⚠️ Payment still not found, checking all recent PayTR payments (all statuses)...');
+      
+      // Tüm status'lerdeki son payment'ları kontrol et
+      const allRecentPayments = await this.paymentRepository
+        .createQueryBuilder('payment')
+        .where('payment.type = :type', { type: PaymentType.PAYTR })
+        .orderBy('payment.created_at', 'DESC')
+        .limit(20)
+        .getMany();
+      
+      console.log(`📊 Found ${allRecentPayments.length} recent PayTR payments (all statuses)`);
+      
+      // Callback'te gelen merchant_oid ile eşleşen payment'ı ara
+      let foundMatch = false;
+      for (const p of allRecentPayments) {
+        const storedSanitized = p.payment_details?.sanitized_merchant_oid;
+        const storedTemp = p.payment_details?.temp_merchant_oid;
+        const storedPaytrSent = p.payment_details?.paytr_sent_merchant_oid;
+        const transactionId = p.transaction_id;
+        
+        // Eşleşme kontrolü
+        const matchesSanitized = storedSanitized === merchantOid;
+        const matchesTemp = storedTemp === merchantOid;
+        const matchesPaytrSent = storedPaytrSent === merchantOid;
+        const matchesTransaction = transactionId?.includes(merchantOid);
+        
+        if (matchesSanitized || matchesTemp || matchesPaytrSent || matchesTransaction) {
+          console.log(`✅ MATCH FOUND! Payment ID: ${p.id}, Status: ${p.status}`);
+          console.log(`   sanitized_merchant_oid: ${storedSanitized}, temp_merchant_oid: ${storedTemp}, paytr_sent_merchant_oid: ${storedPaytrSent}`);
+          console.log(`   transaction_id: ${transactionId}`);
+          foundMatch = true;
+          // Eşleşen payment'ı kullan
+          if (!payment) {
+            payment = p;
+          }
+        } else {
+          // İlk 5 payment'ı göster (debug için)
+          if (allRecentPayments.indexOf(p) < 5) {
+            console.log(`  - Payment ID: ${p.id}, Status: ${p.status}, sanitized: ${storedSanitized}, temp: ${storedTemp}, paytr_sent: ${storedPaytrSent}, transaction_id: ${transactionId}`);
+          }
+        }
+      }
+      
+      if (!foundMatch) {
+        console.log(`❌ No matching payment found for merchant_oid: ${merchantOid}`);
+        console.log(`   Searched in ${allRecentPayments.length} recent payments`);
+      }
+    }
+    
     // Eğer hala bulunamazsa, UUID formatına çevirip sale_id ile dene (eski yöntem için)
     if (!payment && merchantOid.length === 32) {
+      console.log('🔍 Trying UUID format conversion...');
       const uuidFormat = `${merchantOid.substring(0, 8)}-${merchantOid.substring(8, 12)}-${merchantOid.substring(12, 16)}-${merchantOid.substring(16, 20)}-${merchantOid.substring(20)}`;
       payment = await this.paymentRepository.findOne({
         where: { sale_id: uuidFormat },
@@ -432,7 +507,11 @@ export class PaymentService {
     }
     
     if (!payment) {
-      console.error('Payment not found for merchant_oid:', merchantOid);
+      console.error('❌ Payment not found for merchant_oid:', merchantOid);
+      console.error('   This could mean:');
+      console.error('   1. Payment was never created');
+      console.error('   2. Payment was created with a different merchant_oid format');
+      console.error('   3. Payment was already processed and status changed');
       throw new AppError(404, 'Payment not found');
     }
     
@@ -460,6 +539,14 @@ export class PaymentService {
       console.log('Customer data:', saleData.customer ? 'exists' : 'missing');
       console.log('Vehicle data:', saleData.vehicle ? 'exists' : 'missing');
       console.log('Sale data:', saleData.sale ? 'exists' : 'missing');
+      
+      // Debug: Vehicle data içeriğini logla
+      if (saleData.vehicle) {
+        console.log('🔍 Vehicle data details:', JSON.stringify(saleData.vehicle, null, 2));
+        console.log('🔍 Vehicle plate:', saleData.vehicle.plate);
+        console.log('🔍 Vehicle plate exists?', !!saleData.vehicle.plate);
+      }
+      
       // Transaction başlat - tüm kayıtlar birlikte oluşturulacak
       const queryRunner = AppDataSource.createQueryRunner();
       await queryRunner.connect();
@@ -499,10 +586,19 @@ export class PaymentService {
 
         // 2. Araç oluştur veya bul
         let vehicle: Vehicle;
-        if (saleData.vehicle?.plate) {
+        // Plate kontrolü - plate varsa veya vehicle objesi varsa devam et
+        const vehiclePlate = saleData.vehicle?.plate || saleData.vehicle?.plate_number || saleData.vehicle?.plaka;
+        if (vehiclePlate || saleData.vehicle) {
+          // Eğer plate yoksa ama vehicle objesi varsa, hata ver
+          if (!vehiclePlate) {
+            console.error('❌ Vehicle object exists but plate is missing!');
+            console.error('Vehicle data:', JSON.stringify(saleData.vehicle, null, 2));
+            throw new AppError(400, 'Vehicle plate not found in payment details. Vehicle data: ' + JSON.stringify(saleData.vehicle));
+          }
           // Mevcut aracı kontrol et
+          const plateToSearch = vehiclePlate.toUpperCase();
           const existingVehicle = await this.vehicleRepository.findOne({
-            where: { plate: saleData.vehicle.plate.toUpperCase() }
+            where: { plate: plateToSearch }
           });
 
           if (existingVehicle) {
@@ -510,13 +606,18 @@ export class PaymentService {
           } else {
             // Yeni araç oluştur
             const isMotorcycle = saleData.vehicle.vehicle_type === 'Motosiklet';
+            const plateValue = vehiclePlate || saleData.vehicle.plate || saleData.vehicle.plate_number || saleData.vehicle.plaka;
+            if (!plateValue) {
+              throw new AppError(400, 'Vehicle plate is required but not found in payment details');
+            }
+            
             const vehicleData: any = {
               customer_id: customer.id,
               agency_id: saleData.agency_id || undefined,
               branch_id: saleData.branch_id || undefined,
               vehicle_type: saleData.vehicle.vehicle_type,
-              is_foreign_plate: saleData.vehicle.is_foreign_plate,
-              plate: saleData.vehicle.plate.toUpperCase(),
+              is_foreign_plate: saleData.vehicle.is_foreign_plate || false,
+              plate: plateValue.toUpperCase(),
               registration_serial: saleData.vehicle.registration_serial?.toUpperCase() || undefined,
               registration_number: saleData.vehicle.registration_number || undefined,
               model_year: saleData.vehicle.model_year,
@@ -673,7 +774,7 @@ export class PaymentService {
             const endDate = formatDate(sale.end_date);
             
             // PDF linkini oluştur (temiz URL - frontend route)
-            const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+            const frontendUrl = process.env.FRONTEND_URL || 'https://cozum.net';
             const pdfUrl = `${frontendUrl}/pdf/sale/${sale.id}`;
             
             const smsMessage = `Sayın ${customerName}, ${packageName} paketiniz başarıyla oluşturuldu. Satış No: ${sale.policy_number}, Başlangıç: ${startDate}, Bitiş: ${endDate}. Sözleşme: ${pdfUrl} 7/24 Destek: 0850 304 54 40`;

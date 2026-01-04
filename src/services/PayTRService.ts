@@ -135,8 +135,9 @@ export class PayTRService {
   /**
    * UUID'yi PayTR için alfanumerik hale getir (tireleri ve alt çizgileri kaldır)
    * PayTR merchant_oid sadece alfanumerik karakter kabul eder (harf ve rakam)
+   * Public metod - PaymentService'ten erişilebilir olmalı
    */
-  sanitizeMerchantOid(merchantOid: string): string {
+  public sanitizeMerchantOid(merchantOid: string): string {
     // Tüm özel karakterleri kaldır (tire, alt çizgi, nokta, vs.) - sadece harf ve rakam bırak
     return merchantOid.replace(/[^a-zA-Z0-9]/g, '');
   }
