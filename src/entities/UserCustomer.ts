@@ -35,8 +35,8 @@ export class UserCustomer {
   @Column({ type: 'varchar', length: 255, unique: true })
   email: string;
 
-  // Telefon
-  @Column({ type: 'varchar', length: 50 })
+  // Telefon - benzersiz olmalı (SMS gönderimi için kritik)
+  @Column({ type: 'varchar', length: 50, unique: true })
   phone: string;
 
   // Şifre - hashlenmiş olarak saklanacak
