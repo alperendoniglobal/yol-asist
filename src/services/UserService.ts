@@ -225,11 +225,17 @@ export class UserService {
       try {
         const smsService = new SmsService();
         const smsMessage = `Merhaba ${user.name}${user.surname ? ' ' + user.surname : ''}, hesabınıza hoş geldiniz. E-posta: ${user.email}, Şifre: ${data.password}. 7/24 Destek: 0850 304 54 40`;
+        console.log('📱 SMS gönderiliyor (yeni kullanıcı):', user.phone);
+        console.log('📱 Kullanıcı bilgileri:', { name: user.name, surname: user.surname, email: user.email });
         await smsService.sendSingleSms(user.phone, smsMessage);
+        console.log('✅ SMS başarıyla gönderildi (yeni kullanıcı)');
       } catch (error: any) {
         // SMS gönderme hatası ana işlemi etkilememeli, sadece log yaz
-        console.error('SMS gönderme hatası (yeni kullanıcı):', error.message);
+        console.error('❌ SMS gönderme hatası (yeni kullanıcı):', error.message);
+        console.error('❌ SMS gönderme hatası (stack):', error.stack);
       }
+    } else {
+      console.log('⚠️ SMS gönderilemedi (yeni kullanıcı): Telefon numarası bulunamadı');
     }
 
     const { password, ...userWithoutPassword } = user;
