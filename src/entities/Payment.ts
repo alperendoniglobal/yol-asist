@@ -16,8 +16,8 @@ export class Payment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid' })
-  sale_id: string;
+  @Column({ type: 'uuid', nullable: true })
+  sale_id: string | null;
 
   // Sistem kayıtları için nullable (UserCustomer satışlarında null olabilir)
   @Column({ type: 'uuid', nullable: true })
@@ -52,9 +52,9 @@ export class Payment {
   updated_at: Date;
 
   // Relations
-  @ManyToOne(() => Sale, sale => sale.payments, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Sale, sale => sale.payments, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'sale_id' })
-  sale: Sale;
+  sale: Sale | null;
 
   @ManyToOne(() => Agency, agency => agency.payments, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'agency_id' })

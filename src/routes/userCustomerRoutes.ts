@@ -34,6 +34,9 @@ router.post('/login', userCustomerController.login);
 // Token yenile
 router.post('/refresh-token', userCustomerController.refreshToken);
 
+// Şifremi unuttum (public)
+router.post('/forgot-password', userCustomerController.forgotPassword);
+
 // ===== PROTECTED ROUTES =====
 
 // Profil bilgilerini getir

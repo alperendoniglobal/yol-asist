@@ -224,7 +224,7 @@ export class UserService {
     if (user.phone) {
       try {
         const smsService = new SmsService();
-        const smsMessage = `Merhaba ${user.name}${user.surname ? ' ' + user.surname : ''}, Çözüm Asistan sistemine hoş geldiniz. E-posta: ${user.email}, Şifre: ${data.password}. 7/24 Destek: 0850 304 54 40`;
+        const smsMessage = `Merhaba ${user.name}${user.surname ? ' ' + user.surname : ''}, hesabınıza hoş geldiniz. E-posta: ${user.email}, Şifre: ${data.password}. 7/24 Destek: 0850 304 54 40`;
         await smsService.sendSingleSms(user.phone, smsMessage);
       } catch (error: any) {
         // SMS gönderme hatası ana işlemi etkilememeli, sadece log yaz
@@ -267,6 +267,10 @@ export class UserService {
       }
     }
 
+    // Şifre değişikliği kontrolü (hash'lenmeden önce sakla)
+    const newPassword = data.password;
+    const passwordChanged = !!data.password; // Şifre gönderilmişse değişiklik var
+
     if (data.password) {
       data.password = await hashPassword(data.password);
     }
@@ -281,6 +285,20 @@ export class UserService {
 
     Object.assign(user, data);
     await this.userRepository.save(user);
+
+    // Şifre değiştirildiyse SMS gönder
+    if (passwordChanged && newPassword && user.phone) {
+      try {
+        const smsService = new SmsService();
+        const smsMessage = `Merhaba ${user.name}${user.surname ? ' ' + user.surname : ''}, şifreniz yönetici tarafından değiştirildi. Yeni şifreniz: ${newPassword}. 7/24 Destek: 0850 304 54 40`;
+        console.log('📱 SMS gönderiliyor (yönetici şifre değiştirme):', user.phone);
+        await smsService.sendSingleSms(user.phone, smsMessage);
+        console.log('✅ SMS başarıyla gönderildi (yönetici şifre değiştirme)');
+      } catch (error: any) {
+        // SMS gönderme hatası ana işlemi etkilememeli, sadece log yaz
+        console.error('❌ SMS gönderme hatası (yönetici şifre değiştirme):', error.message);
+      }
+    }
 
     const { password, ...userWithoutPassword } = user;
     return {

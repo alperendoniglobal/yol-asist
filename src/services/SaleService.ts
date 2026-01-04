@@ -473,6 +473,7 @@ export class SaleService {
         });
         
         customer = await queryRunner.manager.save(newCustomer);
+        console.log('📝 Customer created in transaction (will be rolled back for PayTR):', customer.id);
       }
 
       // 2. ARAÇ İŞLEMİ
@@ -539,17 +540,7 @@ export class SaleService {
         vehicle = await queryRunner.manager.save(newVehicle);
       }
 
-      // 3. SATIŞ İŞLEMİ
-      // Paketi kontrol et
-      const pkg = await queryRunner.manager.findOne(Package, {
-        where: { id: input.sale.package_id }
-      });
-      
-      if (!pkg) {
-        throw new AppError(404, 'Paket bulunamadı');
-      }
-
-      // Dağılımlı komisyon hesapla (eğer gönderilmemişse)
+      // Komisyon hesaplamaları (PayTR için de gerekli)
       let branchCommission: number | null = null;
       let agencyCommission: number | null = null;
       let totalCommission: number = 0;
@@ -582,6 +573,116 @@ export class SaleService {
         }
       }
 
+      // 4. ÖDEME İŞLEMİ - PayTR için önce kontrol et, hiçbir kayıt oluşturma
+      if (input.payment.type === PaymentType.PAYTR) {
+        // PayTR için hiçbir kayıt oluşturulmamalı - önce ödeme yapılmalı
+        console.log('⚠️ PayTR payment detected - rolling back transaction to prevent premature record creation');
+        console.log('Customer ID before rollback:', customer.id);
+        console.log('Vehicle ID before rollback:', vehicle.id);
+        
+        // Transaction'ı rollback et (müşteri ve araç kaydedilmemeli)
+        await queryRunner.rollbackTransaction();
+        await queryRunner.release();
+        
+        console.log('✅ Transaction rolled back - no customer, vehicle, or sale records created');
+        
+        // Geçici bir merchant_oid oluştur (PayTR için)
+        const tempMerchantOid = `temp_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        // PayTR için sanitize edilmiş versiyonu da sakla
+        const sanitizedMerchantOid = tempMerchantOid.replace(/[^a-zA-Z0-9]/g, '');
+        
+        // Tüm bilgileri payment_details'te sakla (müşteri, araç, satış bilgileri)
+        const saleData = {
+          // Müşteri bilgileri (ID değil, tüm bilgiler)
+          customer: {
+            is_corporate: input.customer.is_corporate,
+            tc_vkn: input.customer.tc_vkn,
+            name: input.customer.name,
+            surname: input.customer.surname,
+            tax_office: input.customer.tax_office,
+            birth_date: input.customer.birth_date,
+            phone: input.customer.phone,
+            email: input.customer.email,
+            city: input.customer.city,
+            district: input.customer.district,
+            address: input.customer.address,
+          },
+          // Araç bilgileri (ID değil, tüm bilgiler)
+          vehicle: {
+            vehicle_type: input.vehicle.vehicle_type,
+            is_foreign_plate: input.vehicle.is_foreign_plate,
+            plate: input.vehicle.plate,
+            registration_serial: input.vehicle.registration_serial,
+            registration_number: input.vehicle.registration_number,
+            brand_id: input.vehicle.brand_id,
+            model_id: input.vehicle.model_id,
+            motor_brand_id: input.vehicle.motor_brand_id,
+            motor_model_id: input.vehicle.motor_model_id,
+            model_year: input.vehicle.model_year,
+            usage_type: input.vehicle.usage_type,
+          },
+          // Satış bilgileri
+          sale: {
+            package_id: input.sale.package_id,
+            price: input.sale.price,
+            start_date: input.sale.start_date,
+            end_date: input.sale.end_date,
+            commission: totalCommission,
+            branch_commission: branchCommission,
+            agency_commission: agencyCommission,
+          },
+          // Diğer bilgiler
+          agency_id: input.agency_id,
+          branch_id: input.branch_id,
+          user_id: input.user_id,
+        };
+        
+        // Payment kaydı oluştur (hiçbir ilişkili kayıt olmadan)
+        // transaction_id'yi sanitize edilmiş merchant_oid ile oluştur (frontend'den gelen ID ile eşleşmesi için)
+        const payment = this.paymentRepository.create({
+          sale_id: null, // Satış henüz yok, callback'te gerçek sale_id ile güncellenecek
+          agency_id: input.agency_id || undefined,
+          amount: input.sale.price,
+          type: PaymentType.PAYTR,
+          status: PaymentStatus.PENDING,
+          transaction_id: `PAYTR_PENDING_${sanitizedMerchantOid}_${Date.now()}`,
+          payment_details: {
+            payment_initiated_at: new Date().toISOString(),
+            sale_data: saleData, // Tüm bilgileri sakla
+            temp_merchant_oid: tempMerchantOid, // Orijinal format
+            sanitized_merchant_oid: sanitizedMerchantOid, // PayTR'ye gönderilen format
+            note: 'All records will be created after successful payment',
+          },
+        });
+        
+        await this.paymentRepository.save(payment);
+        
+        // Token almak için gerekli bilgileri döndür
+        return {
+          temp_merchant_oid: sanitizedMerchantOid, // Frontend'e sanitize edilmiş versiyonu gönder
+          payment_id: payment.id,
+          package_id: input.sale.package_id,
+          price: input.sale.price,
+          start_date: input.sale.start_date,
+          end_date: input.sale.end_date,
+          agency_id: input.agency_id,
+          branch_id: input.branch_id,
+          user_id: input.user_id,
+          payment_type: PaymentType.PAYTR,
+        } as any;
+      }
+
+      // PayTR değilse, normal satış işlemini devam ettir
+      // 3. SATIŞ İŞLEMİ
+      // Paketi kontrol et
+      const pkg = await queryRunner.manager.findOne(Package, {
+        where: { id: input.sale.package_id }
+      });
+      
+      if (!pkg) {
+        throw new AppError(404, 'Paket bulunamadı');
+      }
+
       // Satış numarası oluştur (eğer gönderilmemişse)
       const policyNumber = this.generatePolicyNumber();
 
@@ -603,6 +704,7 @@ export class SaleService {
       });
       
       const sale = await queryRunner.manager.save(newSale);
+      console.log('✅ Sale created (non-PayTR payment):', sale.id);
 
       // 3.5. BAKİYE GÜNCELLEMELERİ
       // Şube varsa: Şube bakiyesine branch_commission ekle
@@ -629,65 +731,45 @@ export class SaleService {
         }
       }
 
-      // 4. ÖDEME İŞLEMİ
+      // 4. ÖDEME İŞLEMİ (Bakiye ödemesi)
       let payment: Payment;
-
-      if (input.payment.type === PaymentType.PAYTR) {
-        // PayTR ödemesi - asenkron çalışır
-        // Token alma işlemi ayrı bir endpoint'te yapılır
-        // Burada sadece pending durumda payment kaydı oluşturulur
-        // Callback'te güncellenecek
-        
-        payment = queryRunner.manager.create(Payment, {
-          sale_id: sale.id,
-          agency_id: input.agency_id || undefined,  // null yerine undefined kullan
-          amount: input.sale.price,
-          type: PaymentType.PAYTR,
-          status: PaymentStatus.PENDING, // Callback'te COMPLETED veya FAILED olacak
-          transaction_id: 'PAYTR_PENDING_' + Date.now() + '_' + Math.floor(Math.random() * 10000),
-          payment_details: {
-            payment_initiated_at: new Date().toISOString(),
-            note: 'Payment will be processed via PayTR callback',
-          },
-        });
-      } else {
-        // Bakiye ödemesi
-        if (!input.agency_id) {
-          throw new AppError(400, 'Bakiye ödemesi için acente gerekli');
-        }
-
-        const agency = await queryRunner.manager.findOne(Agency, {
-          where: { id: input.agency_id }
-        });
-
-        if (!agency) {
-          throw new AppError(404, 'Acente bulunamadı');
-        }
-
-        const currentBalance = parseFloat(agency.balance?.toString() || '0') || 0;
-        const paymentAmount = parseFloat(input.sale.price?.toString() || '0') || 0;
-
-        if (currentBalance < paymentAmount) {
-          throw new AppError(400, `Yetersiz bakiye. Mevcut: ${currentBalance.toFixed(2)} TL, Gerekli: ${paymentAmount.toFixed(2)} TL`);
-        }
-
-        // Bakiyeden düş
-        agency.balance = currentBalance - paymentAmount;
-        await queryRunner.manager.save(agency);
-
-        payment = queryRunner.manager.create(Payment, {
-          sale_id: sale.id,
-          agency_id: input.agency_id,
-          amount: paymentAmount,
-          type: PaymentType.BALANCE,
-          status: PaymentStatus.COMPLETED,
-          transaction_id: 'BALANCE_' + Date.now(),
-          payment_details: {
-            deducted_from_balance: paymentAmount,
-            payment_date: new Date().toISOString(),
-          },
-        });
+      
+      // Bakiye ödemesi
+      if (!input.agency_id) {
+        throw new AppError(400, 'Bakiye ödemesi için acente gerekli');
       }
+
+      const agency = await queryRunner.manager.findOne(Agency, {
+        where: { id: input.agency_id }
+      });
+
+      if (!agency) {
+        throw new AppError(404, 'Acente bulunamadı');
+      }
+
+      const currentBalance = parseFloat(agency.balance?.toString() || '0') || 0;
+      const paymentAmount = parseFloat(input.sale.price?.toString() || '0') || 0;
+
+      if (currentBalance < paymentAmount) {
+        throw new AppError(400, `Yetersiz bakiye. Mevcut: ${currentBalance.toFixed(2)} TL, Gerekli: ${paymentAmount.toFixed(2)} TL`);
+      }
+
+      // Bakiyeden düş
+      agency.balance = currentBalance - paymentAmount;
+      await queryRunner.manager.save(agency);
+
+      payment = queryRunner.manager.create(Payment, {
+        sale_id: sale.id,
+        agency_id: input.agency_id,
+        amount: paymentAmount,
+        type: PaymentType.BALANCE,
+        status: PaymentStatus.COMPLETED,
+        transaction_id: 'BALANCE_' + Date.now(),
+        payment_details: {
+          deducted_from_balance: paymentAmount,
+          payment_date: new Date().toISOString(),
+        },
+      });
 
       await queryRunner.manager.save(payment);
 
@@ -712,7 +794,11 @@ export class SaleService {
           const startDate = formatDate(input.sale.start_date);
           const endDate = formatDate(input.sale.end_date);
           
-          const smsMessage = `Sayın ${customerName}, ${packageName} paketiniz başarıyla oluşturuldu. Satış No: ${policyNumber}, Başlangıç: ${startDate}, Bitiş: ${endDate}. 7/24 Destek: 0850 304 54 40`;
+          // PDF linkini oluştur (temiz URL - frontend route)
+          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+          const pdfUrl = `${frontendUrl}/pdf/sale/${sale.id}`;
+          
+          const smsMessage = `Sayın ${customerName}, ${packageName} paketiniz başarıyla oluşturuldu. Satış No: ${policyNumber}, Başlangıç: ${startDate}, Bitiş: ${endDate}. Sözleşme: ${pdfUrl} 7/24 Destek: 0850 304 54 40`;
           await smsService.sendSingleSms(customer.phone, smsMessage);
         } catch (error: any) {
           // SMS gönderme hatası ana işlemi etkilememeli, sadece log yaz
@@ -725,11 +811,16 @@ export class SaleService {
 
     } catch (error) {
       // Hata oluştu - tüm işlemleri geri al
-      await queryRunner.rollbackTransaction();
+      // Sadece transaction başlatılmışsa rollback et
+      if (queryRunner.isTransactionActive) {
+        await queryRunner.rollbackTransaction();
+      }
       throw error;
     } finally {
-      // QueryRunner'ı serbest bırak
-      await queryRunner.release();
+      // QueryRunner'ı serbest bırak (sadece release edilmemişse)
+      if (queryRunner.isReleased === false) {
+        await queryRunner.release();
+      }
     }
   }
 

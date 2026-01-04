@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import { PublicController } from '../controllers/PublicController';
 import { DealerApplicationController } from '../controllers/DealerApplicationController';
+import { PdfController } from '../controllers/PdfController';
 import { optionalUserCustomerAuth } from '../middlewares/optionalUserCustomerAuth';
 
 const router = Router();
 const publicController = new PublicController();
 const dealerApplicationController = new DealerApplicationController();
+const pdfController = new PdfController();
 
 /**
  * Public API Routes
@@ -47,6 +49,10 @@ router.post('/purchase', publicController.processPurchase);
 // ===== BAYİLİK BAŞVURU ROUTES =====
 // Yeni bayilik başvurusu oluştur
 router.post('/dealer-application', dealerApplicationController.create);
+
+// ===== PUBLIC PDF ROUTES =====
+// Satış PDF'i - Authentication gerektirmez (SMS ile gönderilen linkler için)
+router.get('/pdf/sale/:id', pdfController.viewSaleContractPublic);
 
 export default router;
 

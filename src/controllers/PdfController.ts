@@ -97,5 +97,51 @@ export class PdfController {
       });
     }
   };
+
+  /**
+   * Public PDF endpoint - Authentication gerektirmez
+   * Müşterilere SMS ile gönderilen link için
+   * GET /api/v1/public/pdf/sale/:id
+   */
+  viewSaleContractPublic = async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      if (!id) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Satis ID gereklidir' 
+        });
+      }
+
+      // PDF olustur
+      const pdfBuffer = await this.pdfService.generateSaleContract(id);
+
+      // Response headers - inline gosterim
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="sozlesme-${id.slice(0, 8)}.pdf"`,
+        'Content-Length': pdfBuffer.length
+      });
+
+      // PDF'i gonder
+      res.send(pdfBuffer);
+
+    } catch (error: any) {
+      console.error('Public PDF goruntuleme hatasi:', error);
+      
+      if (error.message === 'Satis bulunamadi') {
+        return res.status(404).json({ 
+          success: false, 
+          error: 'Satis bulunamadi' 
+        });
+      }
+
+      res.status(500).json({ 
+        success: false, 
+        error: 'PDF goruntulenirken bir hata olustu' 
+      });
+    }
+  };
 }
 

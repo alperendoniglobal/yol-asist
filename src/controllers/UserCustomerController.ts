@@ -189,6 +189,29 @@ export class UserCustomerController {
   };
 
   /**
+   * Şifremi unuttum
+   * POST /api/v1/user-customer/forgot-password
+   */
+  forgotPassword = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { phone } = req.body;
+
+      if (!phone) {
+        throw new AppError(400, 'Telefon numarası gerekli');
+      }
+
+      const result = await this.userCustomerService.forgotPassword(phone);
+
+      res.json({
+        success: true,
+        message: result.message,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
    * Satın alınan paketleri getir
    * GET /api/v1/user-customer/purchases
    */

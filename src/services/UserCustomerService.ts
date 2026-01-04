@@ -237,7 +237,135 @@ export class UserCustomerService {
     userCustomer.password = await hashPassword(newPassword);
     await this.userCustomerRepository.save(userCustomer);
 
+    // SMS gönderme işlemi (hata durumunda ana işlemi etkilememeli)
+    if (userCustomer.phone) {
+      try {
+        const { SmsService } = await import('./SmsService');
+        const smsService = new SmsService();
+        const smsMessage = `Merhaba ${userCustomer.name}${userCustomer.surname ? ' ' + userCustomer.surname : ''}, şifreniz başarıyla değiştirildi. Yeni şifreniz: ${newPassword}. 7/24 Destek: 0850 304 54 40`;
+        console.log('📱 SMS gönderiliyor (UserCustomer şifre değiştirme):', userCustomer.phone);
+        await smsService.sendSingleSms(userCustomer.phone, smsMessage);
+        console.log('✅ SMS başarıyla gönderildi (UserCustomer şifre değiştirme)');
+      } catch (error: any) {
+        // SMS gönderme hatası ana işlemi etkilememeli, sadece log yaz
+        console.error('❌ SMS gönderme hatası (UserCustomer şifre değiştirme):', error.message);
+      }
+    }
+
     return { message: 'Şifre başarıyla değiştirildi' };
+  }
+
+  /**
+   * Şifre sıfırlama işlemi (phone ile)
+   * Telefon numarası ile kullanıcı bulunur, yeni geçici şifre oluşturulur ve SMS ile gönderilir
+   */
+  async forgotPassword(phone: string) {
+    console.log('🔍 UserCustomer forgotPassword çağrıldı');
+    console.log(`🔍 Gelen telefon numarası: "${phone}"`);
+    
+    // Telefon numarasını temizle ve formatla
+    let formattedPhone = phone.replace(/\s+/g, ''); // Boşlukları kaldır
+    
+    // +90 ile başlıyorsa kaldır
+    if (formattedPhone.startsWith('+90')) {
+      formattedPhone = formattedPhone.substring(3);
+    }
+    
+    // 0 ile başlıyorsa kaldır
+    if (formattedPhone.startsWith('0')) {
+      formattedPhone = formattedPhone.substring(1);
+    }
+    
+    // Sadece rakamlar kalmalı
+    formattedPhone = formattedPhone.replace(/\D/g, '');
+    
+    console.log(`🔍 Formatlanmış telefon numarası: "${formattedPhone}"`);
+
+    // Veritabanında hem formatlanmış hem de formatlanmamış numarayı ara
+    let userCustomer = await this.userCustomerRepository.findOne({
+      where: { phone: formattedPhone },
+    });
+    
+    // Eğer bulunamadıysa, orijinal telefon numarası ile de dene
+    if (!userCustomer && phone !== formattedPhone) {
+      console.log(`🔍 Formatlanmış numara ile bulunamadı, orijinal numara ile deneniyor: "${phone}"`);
+      userCustomer = await this.userCustomerRepository.findOne({
+        where: { phone: phone },
+      });
+    }
+
+    if (!userCustomer) {
+      console.log(`❌ Kullanıcı bulunamadı - telefon: "${formattedPhone}" veya "${phone}"`);
+      // Güvenlik nedeniyle kullanıcı bulunamadığında da başarılı mesajı döndür
+      return { message: 'Eğer bu telefon numarasına kayıtlı bir hesap varsa, şifre sıfırlama bilgileri gönderildi.' };
+    }
+
+    console.log(`✅ Kullanıcı bulundu: ${userCustomer.name} ${userCustomer.surname || ''} - Telefon: "${userCustomer.phone}"`);
+
+    if (!userCustomer.is_active) {
+      console.log(`❌ Hesap aktif değil: ${userCustomer.id}`);
+      throw new AppError(403, 'Hesap aktif değil');
+    }
+
+    // 8 karakterlik geçici şifre oluştur (büyük harf, küçük harf, rakam)
+    const tempPassword = this.generateTempPassword(8);
+    console.log(`🔑 Geçici şifre oluşturuldu: ${tempPassword}`);
+    const hashedPassword = await hashPassword(tempPassword);
+
+    // Şifreyi güncelle
+    userCustomer.password = hashedPassword;
+    await this.userCustomerRepository.save(userCustomer);
+    console.log(`✅ Şifre güncellendi`);
+
+    // SMS gönderme işlemi (hata durumunda ana işlemi etkilememeli)
+    console.log(`📱 SMS gönderme kontrolü - userCustomer.phone: "${userCustomer.phone}"`);
+    if (userCustomer.phone) {
+      try {
+        console.log('📱 SmsService import ediliyor...');
+        const { SmsService } = await import('./SmsService');
+        const smsService = new SmsService();
+        const smsMessage = `Merhaba ${userCustomer.name}${userCustomer.surname ? ' ' + userCustomer.surname : ''}, şifre sıfırlama talebiniz alındı. Yeni geçici şifreniz: ${tempPassword}. Lütfen giriş yaptıktan sonra şifrenizi değiştirin. 7/24 Destek: 0850 304 54 40`;
+        console.log('📱 SMS gönderiliyor (UserCustomer şifre sıfırlama)');
+        console.log(`📱 Telefon: "${userCustomer.phone}"`);
+        console.log(`📱 Mesaj: "${smsMessage.substring(0, 100)}..."`);
+        await smsService.sendSingleSms(userCustomer.phone, smsMessage);
+        console.log('✅ SMS başarıyla gönderildi (UserCustomer şifre sıfırlama)');
+      } catch (error: any) {
+        // SMS gönderme hatası ana işlemi etkilememeli, sadece log yaz
+        console.error('❌ SMS gönderme hatası (UserCustomer şifre sıfırlama):', error.message);
+        console.error('❌ SMS gönderme hatası (stack):', error.stack);
+      }
+    } else {
+      console.log('⚠️ userCustomer.phone boş, SMS gönderilemedi');
+    }
+
+    return { message: 'Şifre sıfırlama bilgileri gönderildi.' };
+  }
+
+  /**
+   * Geçici şifre oluştur
+   * @param length - Şifre uzunluğu
+   * @returns Rastgele şifre
+   */
+  private generateTempPassword(length: number): string {
+    const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+    const numbers = '0123456789';
+    const allChars = uppercase + lowercase + numbers;
+
+    let password = '';
+    // En az bir büyük harf, bir küçük harf ve bir rakam içermeli
+    password += uppercase[Math.floor(Math.random() * uppercase.length)];
+    password += lowercase[Math.floor(Math.random() * lowercase.length)];
+    password += numbers[Math.floor(Math.random() * numbers.length)];
+
+    // Kalan karakterleri rastgele ekle
+    for (let i = password.length; i < length; i++) {
+      password += allChars[Math.floor(Math.random() * allChars.length)];
+    }
+
+    // Karakterleri karıştır
+    return password.split('').sort(() => Math.random() - 0.5).join('');
   }
 
   /**

@@ -134,6 +134,20 @@ export class AuthService {
 
     await this.userRepository.save(user);
 
+    // SMS gönderme işlemi (hata durumunda ana işlemi etkilememeli)
+    if (user.phone) {
+      try {
+        const smsService = new SmsService();
+        const smsMessage = `Merhaba ${user.name}${user.surname ? ' ' + user.surname : ''}, şifreniz başarıyla değiştirildi. Yeni şifreniz: ${newPassword}. 7/24 Destek: 0850 304 54 40`;
+        console.log('📱 SMS gönderiliyor (şifre değiştirme):', user.phone);
+        await smsService.sendSingleSms(user.phone, smsMessage);
+        console.log('✅ SMS başarıyla gönderildi (şifre değiştirme)');
+      } catch (error: any) {
+        // SMS gönderme hatası ana işlemi etkilememeli, sadece log yaz
+        console.error('❌ SMS gönderme hatası (şifre değiştirme):', error.message);
+      }
+    }
+
     return { message: 'Password changed successfully' };
   }
 
@@ -156,16 +170,32 @@ export class AuthService {
 
   /**
    * Şifre sıfırlama işlemi
-   * E-posta ile kullanıcı bulunur, yeni geçici şifre oluşturulur ve SMS ile gönderilir
+   * Telefon numarası ile kullanıcı bulunur, yeni geçici şifre oluşturulur ve SMS ile gönderilir
    */
-  async forgotPassword(email: string) {
+  async forgotPassword(phone: string) {
+    // Telefon numarasını temizle ve formatla
+    let formattedPhone = phone.replace(/\s+/g, ''); // Boşlukları kaldır
+    
+    // +90 ile başlıyorsa kaldır
+    if (formattedPhone.startsWith('+90')) {
+      formattedPhone = formattedPhone.substring(3);
+    }
+    
+    // 0 ile başlıyorsa kaldır
+    if (formattedPhone.startsWith('0')) {
+      formattedPhone = formattedPhone.substring(1);
+    }
+    
+    // Sadece rakamlar kalmalı
+    formattedPhone = formattedPhone.replace(/\D/g, '');
+
     const user = await this.userRepository.findOne({
-      where: { email },
+      where: { phone: formattedPhone },
     });
 
     if (!user) {
       // Güvenlik nedeniyle kullanıcı bulunamadığında da başarılı mesajı döndür
-      return { message: 'Eğer bu e-posta adresine kayıtlı bir hesap varsa, şifre sıfırlama bilgileri gönderildi.' };
+      return { message: 'Eğer bu telefon numarasına kayıtlı bir hesap varsa, şifre sıfırlama bilgileri gönderildi.' };
     }
 
     if (user.status !== EntityStatus.ACTIVE) {

@@ -133,12 +133,12 @@ export class PayTRService {
   }
 
   /**
-   * UUID'yi PayTR için alfanumerik hale getir (tireleri kaldır)
-   * PayTR merchant_oid sadece alfanumerik karakter kabul eder
+   * UUID'yi PayTR için alfanumerik hale getir (tireleri ve alt çizgileri kaldır)
+   * PayTR merchant_oid sadece alfanumerik karakter kabul eder (harf ve rakam)
    */
   sanitizeMerchantOid(merchantOid: string): string {
-    // UUID formatındaki tireleri kaldır (örn: "10b561c9-5160-4c83-b0b8-4f675673a192" -> "10b561c951604c83b0b84f675673a192")
-    return merchantOid.replace(/-/g, '');
+    // Tüm özel karakterleri kaldır (tire, alt çizgi, nokta, vs.) - sadece harf ve rakam bırak
+    return merchantOid.replace(/[^a-zA-Z0-9]/g, '');
   }
 
   /**
@@ -377,7 +377,12 @@ export class PayTRService {
         };
       }
     } catch (error: any) {
-      console.error('PayTR token error:', error);
+      console.error('PayTR token error:', {
+        message: error.message,
+        response: error.response?.data,
+        reason: error.response?.data?.reason,
+        status: error.response?.status,
+      });
       throw new Error(
         error.response?.data?.reason || error.message || 'PayTR token alma başarısız'
       );

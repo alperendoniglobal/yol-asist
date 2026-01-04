@@ -50,13 +50,13 @@ export class AuthController {
   });
 
   forgotPassword = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-    const { email } = req.body;
+    const { phone } = req.body;
 
-    if (!email) {
-      return errorResponse(res, 'Email is required', 400);
+    if (!phone) {
+      return errorResponse(res, 'Telefon numarası gerekli', 400);
     }
 
-    const result = await this.authService.forgotPassword(email);
-    successResponse(res, result, 'Password reset information sent');
+    const result = await this.authService.forgotPassword(phone);
+    successResponse(res, result, 'Şifre sıfırlama bilgileri gönderildi');
   });
 }

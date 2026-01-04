@@ -59,13 +59,67 @@ export class SmsService {
   }
 
   /**
+   * Telefon numarasını formatla ve validate et
+   * @param phoneNumber - Ham telefon numarası (örn: "05432550641", "+905432550641", "5432550641")
+   * @returns Formatlanmış telefon numarası (örn: "5432550641")
+   */
+  private formatPhoneNumber(phoneNumber: string): string {
+    if (!phoneNumber) {
+      throw new AppError(400, 'Telefon numarası boş olamaz');
+    }
+
+    // Boşlukları ve özel karakterleri kaldır
+    let formatted = phoneNumber.replace(/\s+/g, '').replace(/[()-]/g, '');
+    
+    // +90 ile başlıyorsa kaldır
+    if (formatted.startsWith('+90')) {
+      formatted = formatted.substring(3);
+    }
+    
+    // 90 ile başlıyorsa kaldır (uluslararası format)
+    if (formatted.startsWith('90') && formatted.length === 12) {
+      formatted = formatted.substring(2);
+    }
+    
+    // 0 ile başlıyorsa kaldır
+    if (formatted.startsWith('0')) {
+      formatted = formatted.substring(1);
+    }
+    
+    // Sadece rakamlar kalmalı
+    formatted = formatted.replace(/\D/g, '');
+
+    // Validasyon: 10 haneli olmalı ve 5 ile başlamalı (Türkiye cep telefonu)
+    if (formatted.length !== 10) {
+      throw new AppError(400, `Geçersiz telefon numarası formatı. 10 haneli olmalı. Gelen: ${phoneNumber}, Formatlanmış: ${formatted}`);
+    }
+
+    if (!formatted.startsWith('5')) {
+      throw new AppError(400, `Geçersiz telefon numarası. Türkiye cep telefonu numarası 5 ile başlamalı. Gelen: ${phoneNumber}, Formatlanmış: ${formatted}`);
+    }
+
+    return formatted;
+  }
+
+  /**
    * Tek bir SMS gönder
-   * @param phoneNumber - Alıcı telefon numarası (örn: "5101234567")
+   * @param phoneNumber - Alıcı telefon numarası (örn: "05432550641", "+905432550641", "5432550641")
    * @param message - Gönderilecek mesaj
    * @returns Gönderim sonucu
    */
   async sendSingleSms(phoneNumber: string, message: string): Promise<SmsResponse> {
-    return this.sendBulkSms([{ no: phoneNumber, msg: message }]);
+    console.log('📱 SMS gönderme işlemi başlatıldı');
+    console.log(`📱 Ham telefon numarası: "${phoneNumber}"`);
+    console.log(`📱 Mesaj uzunluğu: ${message.length} karakter`);
+    
+    // Telefon numarasını formatla ve validate et
+    const formattedPhone = this.formatPhoneNumber(phoneNumber);
+    console.log(`✅ Telefon numarası formatlandı: "${phoneNumber}" -> "${formattedPhone}"`);
+    
+    const result = await this.sendBulkSms([{ no: formattedPhone, msg: message }]);
+    console.log(`✅ SMS gönderme işlemi tamamlandı - Durum: ${result.status}`);
+    
+    return result;
   }
 
   /**
@@ -74,38 +128,39 @@ export class SmsService {
    * @returns Gönderim sonucu
    */
   async sendBulkSms(messages: SmsMessage[]): Promise<SmsResponse> {
+    console.log('📤 Toplu SMS gönderme işlemi başlatıldı');
+    console.log(`📤 Toplam mesaj sayısı: ${messages?.length || 0}`);
+    
     // Credentials kontrolü
     if (!this.username || !this.password || !this.msgheader) {
+      console.error('❌ NetGSM credentials eksik!');
       throw new AppError(500, 'NetGSM credentials not configured');
     }
+    console.log(`✅ NetGSM credentials kontrol edildi - Username: ${this.username}, MsgHeader: ${this.msgheader}`);
 
     // Mesaj listesi kontrolü
     if (!messages || messages.length === 0) {
+      console.error('❌ Mesaj listesi boş!');
       throw new AppError(400, 'At least one message is required');
     }
 
-    // Telefon numaralarını temizle ve formatla (başında 0 varsa kaldır, +90 varsa kaldır)
-    const formattedMessages = messages.map((msg) => {
-      let phoneNumber = msg.no.replace(/\s+/g, ''); // Boşlukları kaldır
-      
-      // +90 ile başlıyorsa kaldır
-      if (phoneNumber.startsWith('+90')) {
-        phoneNumber = phoneNumber.substring(3);
+    // Telefon numaralarını formatla ve validate et
+    console.log('🔄 Telefon numaraları formatlanıyor...');
+    const formattedMessages = messages.map((msg, index) => {
+      try {
+        const formattedPhone = this.formatPhoneNumber(msg.no);
+        console.log(`  ${index + 1}. "${msg.no}" -> "${formattedPhone}" (Mesaj uzunluğu: ${msg.msg.length} karakter)`);
+        return {
+          msg: msg.msg,
+          no: formattedPhone,
+        };
+      } catch (error: any) {
+        // Hatalı numaraları logla ve atla
+        console.error(`❌ Geçersiz telefon numarası atlandı: ${msg.no} - ${error.message}`);
+        throw error; // Hatalı numara varsa tüm işlemi durdur
       }
-      
-      // 0 ile başlıyorsa kaldır
-      if (phoneNumber.startsWith('0')) {
-        phoneNumber = phoneNumber.substring(1);
-      }
-      
-      // Sadece rakamlar kalmalı
-      phoneNumber = phoneNumber.replace(/\D/g, '');
-
-      return {
-        msg: msg.msg,
-        no: phoneNumber,
-      };
     });
+    console.log(`✅ ${formattedMessages.length} telefon numarası başarıyla formatlandı`);
 
     // Request body oluştur
     const requestBody: SmsRequest = {
@@ -116,7 +171,16 @@ export class SmsService {
       partnercode: '',
     };
 
+    console.log('🌐 NetGSM API\'ye istek gönderiliyor...');
+    console.log(`🌐 API URL: ${this.apiUrl}`);
+    console.log(`🌐 Request Body:`, JSON.stringify({
+      ...requestBody,
+      messages: requestBody.messages.map(m => ({ no: m.no, msg: `${m.msg.substring(0, 50)}...` })) // Mesajın ilk 50 karakterini göster
+    }, null, 2));
+
+    const startTime = Date.now();
     try {
+      
       // API'ye istek gönder
       const response = await axios.post(this.apiUrl, requestBody, {
         headers: {
@@ -126,18 +190,31 @@ export class SmsService {
         timeout: 30000, // 30 saniye timeout
       });
 
+      const duration = Date.now() - startTime;
+      console.log(`✅ NetGSM API yanıtı alındı (${duration}ms)`);
+      console.log(`✅ Response Status: ${response.status}`);
+      console.log(`✅ Response Data:`, JSON.stringify(response.data, null, 2));
+
       // Başarılı yanıt
-      return {
+      const result = {
         status: 'success',
         message: 'SMS sent successfully',
         data: response.data,
       };
+      
+      console.log(`✅ SMS gönderme başarılı!`);
+      return result;
     } catch (error: any) {
-      // Hata durumunda detaylı bilgi logla
-      console.error('NetGSM SMS Error:', {
+      const duration = Date.now() - startTime;
+      console.error(`❌ NetGSM API hatası (${duration}ms)`);
+      console.error(`❌ Error Message: ${error.message}`);
+      console.error(`❌ Error Status: ${error.response?.status || 'N/A'}`);
+      console.error(`❌ Error Response Data:`, JSON.stringify(error.response?.data || {}, null, 2));
+      console.error(`❌ Full Error:`, {
         message: error.message,
         response: error.response?.data,
         status: error.response?.status,
+        stack: error.stack,
       });
 
       // NetGSM'den gelen hata mesajını parse et
@@ -157,6 +234,7 @@ export class SmsService {
         errorMessage = error.message || 'SMS gönderilemedi';
       }
       
+      console.error(`❌ SMS gönderme hatası: ${errorMessage}`);
       throw new AppError(
         error.response?.status || 500,
         `SMS gönderim hatası: ${errorMessage}`
