@@ -72,6 +72,19 @@ export class PaymentController {
     successResponse(res, payment, 'Balance payment processed successfully', 201);
   });
 
+  // Frontend'den döndüğünde payment'ı kontrol edip sale oluşturmayı tetikler
+  // Bu endpoint iframe'den döndüğünde anında sale oluşturmayı sağlar
+  checkPaymentAndCreateSale = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { merchant_oid } = req.query;
+    
+    if (!merchant_oid || typeof merchant_oid !== 'string') {
+      return successResponse(res, { payment: null, sale: null, created: false }, 'Merchant OID is required', 400);
+    }
+    
+    const result = await this.paymentService.checkAndCreateSaleFromPayment(merchant_oid);
+    successResponse(res, result, 'Payment checked and sale created if needed');
+  });
+
   refund = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
     const result = await this.paymentService.refund(id);

@@ -10,6 +10,10 @@ const paymentController = new PaymentController();
 router.post('/paytr/callback', paymentController.handlePaytrCallback);
 router.get('/paytr/callback', paymentController.handlePaytrCallback);
 
+// Frontend'den döndüğünde payment'ı kontrol edip sale oluşturmayı tetikler (public - auth gerektirmez)
+// Bu endpoint iframe'den döndüğünde anında sale oluşturmayı sağlar
+router.get('/paytr/check', paymentController.checkPaymentAndCreateSale);
+
 // All other routes require authentication
 // ÖNEMLİ: Callback route'ları yukarıda tanımlanmalı, auth middleware'lerden önce
 router.use(authMiddleware);

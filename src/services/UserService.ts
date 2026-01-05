@@ -16,6 +16,7 @@ export class UserService {
   // Tum kullanicilari getir (silinen kullanicilar haric)
   // Şube yöneticisi sadece kendi şubesindeki kullanıcıları görebilir (acente yöneticisini göremez)
   // Acente yöneticisi acenteki tüm kullanıcıları görebilir
+  // SUPER_ADMIN tüm kullanıcıları görebilir (aktif ve pasif - status filtresi yok)
   async getAll(filter?: any, currentUser?: User) {
     const queryBuilder = this.userRepository
       .createQueryBuilder('user')
@@ -53,6 +54,12 @@ export class UserService {
       // Acente yöneticisini görmemeli (AGENCY_ADMIN rolünü filtrele)
       queryBuilder.andWhere('user.role != :agencyAdminRole', { agencyAdminRole: UserRole.AGENCY_ADMIN });
     }
+
+    // ÖNEMLİ: Status filtresi YOK - tüm kullanıcılar (aktif ve pasif) getirilir
+    // SUPER_ADMIN tüm kullanıcıları görebilir (aktif ve pasif dahil)
+    // AGENCY_ADMIN acenteki tüm kullanıcıları görebilir (aktif ve pasif dahil)
+    // BRANCH_ADMIN şubesindeki tüm kullanıcıları görebilir (aktif ve pasif dahil)
+    // Status filtresi eklenmemeli - tüm roller aktif ve pasif kullanıcıları görebilir
 
     const users = await queryBuilder.getMany();
     return users.map(user => ({
