@@ -42,6 +42,12 @@ export class User {
   @Column({ type: 'varchar', length: 255 })
   password: string;
 
+  // Plain text şifre - SADECE SUPER_ADMIN için gösterilir
+  // Güvenlik: Bu alan sadece şifre oluşturulurken/güncellenirken saklanır
+  // ve sadece SUPER_ADMIN rolüne sahip kullanıcılar tarafından görülebilir
+  @Column({ type: 'varchar', length: 255, nullable: true, select: false })
+  plain_password: string | null;
+
   @Column({
     type: 'enum',
     enum: UserRole,

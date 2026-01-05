@@ -733,43 +733,43 @@ export class SaleService {
 
       // 4. ÖDEME İŞLEMİ (Bakiye ödemesi)
       let payment: Payment;
-      
-      // Bakiye ödemesi
-      if (!input.agency_id) {
-        throw new AppError(400, 'Bakiye ödemesi için acente gerekli');
-      }
 
-      const agency = await queryRunner.manager.findOne(Agency, {
-        where: { id: input.agency_id }
-      });
+        // Bakiye ödemesi
+        if (!input.agency_id) {
+          throw new AppError(400, 'Bakiye ödemesi için acente gerekli');
+        }
 
-      if (!agency) {
-        throw new AppError(404, 'Acente bulunamadı');
-      }
+        const agency = await queryRunner.manager.findOne(Agency, {
+          where: { id: input.agency_id }
+        });
 
-      const currentBalance = parseFloat(agency.balance?.toString() || '0') || 0;
-      const paymentAmount = parseFloat(input.sale.price?.toString() || '0') || 0;
+        if (!agency) {
+          throw new AppError(404, 'Acente bulunamadı');
+        }
 
-      if (currentBalance < paymentAmount) {
-        throw new AppError(400, `Yetersiz bakiye. Mevcut: ${currentBalance.toFixed(2)} TL, Gerekli: ${paymentAmount.toFixed(2)} TL`);
-      }
+        const currentBalance = parseFloat(agency.balance?.toString() || '0') || 0;
+        const paymentAmount = parseFloat(input.sale.price?.toString() || '0') || 0;
 
-      // Bakiyeden düş
-      agency.balance = currentBalance - paymentAmount;
-      await queryRunner.manager.save(agency);
+        if (currentBalance < paymentAmount) {
+          throw new AppError(400, `Yetersiz bakiye. Mevcut: ${currentBalance.toFixed(2)} TL, Gerekli: ${paymentAmount.toFixed(2)} TL`);
+        }
 
-      payment = queryRunner.manager.create(Payment, {
-        sale_id: sale.id,
-        agency_id: input.agency_id,
-        amount: paymentAmount,
-        type: PaymentType.BALANCE,
-        status: PaymentStatus.COMPLETED,
-        transaction_id: 'BALANCE_' + Date.now(),
-        payment_details: {
-          deducted_from_balance: paymentAmount,
-          payment_date: new Date().toISOString(),
-        },
-      });
+        // Bakiyeden düş
+        agency.balance = currentBalance - paymentAmount;
+        await queryRunner.manager.save(agency);
+
+        payment = queryRunner.manager.create(Payment, {
+          sale_id: sale.id,
+          agency_id: input.agency_id,
+          amount: paymentAmount,
+          type: PaymentType.BALANCE,
+          status: PaymentStatus.COMPLETED,
+          transaction_id: 'BALANCE_' + Date.now(),
+          payment_details: {
+            deducted_from_balance: paymentAmount,
+            payment_date: new Date().toISOString(),
+          },
+        });
 
       await queryRunner.manager.save(payment);
 
@@ -813,13 +813,13 @@ export class SaleService {
       // Hata oluştu - tüm işlemleri geri al
       // Sadece transaction başlatılmışsa rollback et
       if (queryRunner.isTransactionActive) {
-        await queryRunner.rollbackTransaction();
+      await queryRunner.rollbackTransaction();
       }
       throw error;
     } finally {
       // QueryRunner'ı serbest bırak (sadece release edilmemişse)
       if (queryRunner.isReleased === false) {
-        await queryRunner.release();
+      await queryRunner.release();
       }
     }
   }

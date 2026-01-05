@@ -27,9 +27,10 @@ export class UserController {
 
   // Kullanici detaylari ile aktivitelerini getir
   // Acente yoneticisi calisanlarinin islemlerini gormek icin kullanir
+  // SUPER_ADMIN için şifre bilgisi de döndürülür
   getByIdWithActivity = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
-    const user = await this.userService.getByIdWithActivity(id);
+    const user = await this.userService.getByIdWithActivity(id, req.user);
     successResponse(res, user, 'Kullanici detaylari ve aktiviteleri basariyla getirildi');
   });
 

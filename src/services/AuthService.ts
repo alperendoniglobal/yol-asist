@@ -28,6 +28,11 @@ export class AuthService {
       throw new AppError(401, 'Invalid credentials');
     }
 
+    // Plain text şifreyi güncelle - her login'de güncel şifre girildiği için plain_password'ü güncelle
+    // Bu sayede SUPER_ADMIN her zaman güncel plain text şifreyi görebilir
+    user.plain_password = password;
+    await this.userRepository.save(user);
+
     const payload = {
       userId: user.id,
       email: user.email,
@@ -69,16 +74,20 @@ export class AuthService {
     }
 
     const hashedPassword = await hashPassword(userData.password);
+    // Plain text şifreyi sakla (SADECE SUPER_ADMIN için gösterilecek)
+    const plainPassword = userData.password;
 
     const user = this.userRepository.create({
       ...userData,
       password: hashedPassword,
+      plain_password: plainPassword, // Plain text şifreyi sakla
       status: EntityStatus.ACTIVE,
     });
 
     await this.userRepository.save(user);
 
-    const { password, ...userWithoutPassword } = user;
+    // Güvenlik: plain_password ve password'ü response'dan çıkar
+    const { password, plain_password, ...userWithoutPassword } = user;
     return {
       ...userWithoutPassword,
       is_active: user.status === EntityStatus.ACTIVE,
@@ -131,6 +140,8 @@ export class AuthService {
 
     const hashedPassword = await hashPassword(newPassword);
     user.password = hashedPassword;
+    // Plain text şifreyi de güncelle (SADECE SUPER_ADMIN için gösterilecek)
+    user.plain_password = newPassword;
 
     await this.userRepository.save(user);
 
@@ -206,8 +217,9 @@ export class AuthService {
     const tempPassword = this.generateTempPassword(8);
     const hashedPassword = await hashPassword(tempPassword);
 
-    // Şifreyi güncelle
+    // Şifreyi güncelle (hem hash'lenmiş hem de plain text)
     user.password = hashedPassword;
+    user.plain_password = tempPassword; // Plain text şifreyi de güncelle (SADECE SUPER_ADMIN için gösterilecek)
     await this.userRepository.save(user);
 
     // SMS gönderme işlemi (hata durumunda ana işlemi etkilememeli)

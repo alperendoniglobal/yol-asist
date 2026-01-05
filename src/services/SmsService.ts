@@ -150,10 +150,10 @@ export class SmsService {
       try {
         const formattedPhone = this.formatPhoneNumber(msg.no);
         console.log(`  ${index + 1}. "${msg.no}" -> "${formattedPhone}" (Mesaj uzunluğu: ${msg.msg.length} karakter)`);
-        return {
-          msg: msg.msg,
+      return {
+        msg: msg.msg,
           no: formattedPhone,
-        };
+      };
       } catch (error: any) {
         // Hatalı numaraları logla ve atla
         console.error(`❌ Geçersiz telefon numarası atlandı: ${msg.no} - ${error.message}`);

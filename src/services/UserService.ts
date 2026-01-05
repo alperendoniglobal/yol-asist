@@ -101,10 +101,17 @@ export class UserService {
 
   // Kullanici detaylari ile birlikte aktivitelerini getir
   // Bu metod acente yoneticisinin calisanlarinin islemlerini gormesi icin
-  async getByIdWithActivity(id: string) {
+  // SUPER_ADMIN için plain_password bilgisi de döndürülür (GÜVENLİK KRİTİK: SADECE SUPER_ADMIN)
+  async getByIdWithActivity(id: string, currentUser?: User) {
+    const isSuperAdmin = currentUser?.role === UserRole.SUPER_ADMIN;
+    
+    // SUPER_ADMIN ise plain_password'ü de seç (select: false olduğu için manuel seçmemiz gerekiyor)
     const user = await this.userRepository.findOne({
       where: { id, is_deleted: false },
       relations: ['agency', 'branch'],
+      select: isSuperAdmin 
+        ? ['id', 'name', 'surname', 'email', 'phone', 'password', 'plain_password', 'role', 'status', 'agency_id', 'branch_id', 'permissions', 'created_at', 'updated_at']
+        : undefined, // Diğerleri için tüm alanlar (plain_password hariç - select: false)
     });
 
     if (!user) {
@@ -160,31 +167,61 @@ export class UserService {
       .orderBy('month', 'ASC')
       .getRawMany();
 
-    const { password, ...userWithoutPassword } = user;
-
-    return {
-      ...userWithoutPassword,
-      is_active: user.status === EntityStatus.ACTIVE,
-      activity: {
-        total_sales: parseInt(salesStats?.total_sales || '0'),
-        total_revenue: parseFloat(salesStats?.total_revenue || '0'),
-        total_commission: parseFloat(salesStats?.total_commission || '0'),
-        customer_count: customerCount,
-        vehicle_count: parseInt(vehicleCount?.count || '0'),
-        recent_sales: recentSales.map(sale => ({
-          id: sale.id,
-          customer_name: sale.customer?.name || 'Bilinmiyor',
-          package_name: sale.package?.name || 'Bilinmiyor',
-          price: sale.price,
-          created_at: sale.created_at,
-        })),
-        monthly_sales: monthlySales.map((item: any) => ({
-          month: item.month,
-          count: parseInt(item.count) || 0,
-          revenue: parseFloat(item.revenue) || 0,
-        })),
-      },
-    };
+    // GÜVENLİK KRİTİK: plain_password SADECE SUPER_ADMIN için döndürülür
+    if (isSuperAdmin) {
+      // SUPER_ADMIN için plain_password'ü de döndür
+      return {
+        ...user,
+        password: user.password, // Hash'lenmiş şifre (opsiyonel, gösterilebilir)
+        plain_password: (user as any).plain_password || null, // Plain text şifre (SADECE SUPER_ADMIN)
+        is_active: user.status === EntityStatus.ACTIVE,
+        activity: {
+          total_sales: parseInt(salesStats?.total_sales || '0'),
+          total_revenue: parseFloat(salesStats?.total_revenue || '0'),
+          total_commission: parseFloat(salesStats?.total_commission || '0'),
+          customer_count: customerCount,
+          vehicle_count: parseInt(vehicleCount?.count || '0'),
+          recent_sales: recentSales.map(sale => ({
+            id: sale.id,
+            customer_name: sale.customer?.name || 'Bilinmiyor',
+            package_name: sale.package?.name || 'Bilinmiyor',
+            price: sale.price,
+            created_at: sale.created_at,
+          })),
+          monthly_sales: monthlySales.map((item: any) => ({
+            month: item.month,
+            count: parseInt(item.count) || 0,
+            revenue: parseFloat(item.revenue) || 0,
+          })),
+        },
+      };
+    } else {
+      // GÜVENLİK: Diğer kullanıcılar için password ve plain_password döndürülmez
+      const { password, plain_password, ...userWithoutPassword } = user;
+      return {
+        ...userWithoutPassword,
+        is_active: user.status === EntityStatus.ACTIVE,
+        activity: {
+          total_sales: parseInt(salesStats?.total_sales || '0'),
+          total_revenue: parseFloat(salesStats?.total_revenue || '0'),
+          total_commission: parseFloat(salesStats?.total_commission || '0'),
+          customer_count: customerCount,
+          vehicle_count: parseInt(vehicleCount?.count || '0'),
+          recent_sales: recentSales.map(sale => ({
+            id: sale.id,
+            customer_name: sale.customer?.name || 'Bilinmiyor',
+            package_name: sale.package?.name || 'Bilinmiyor',
+            price: sale.price,
+            created_at: sale.created_at,
+          })),
+          monthly_sales: monthlySales.map((item: any) => ({
+            month: item.month,
+            count: parseInt(item.count) || 0,
+            revenue: parseFloat(item.revenue) || 0,
+          })),
+        },
+      };
+    }
   }
 
   // Yeni kullanici olustur
@@ -210,6 +247,8 @@ export class UserService {
     }
 
     const hashedPassword = await hashPassword(data.password);
+    // Plain text şifreyi sakla (SADECE SUPER_ADMIN için gösterilecek)
+    const plainPassword = data.password;
 
     // Foreign key'ler icin bos string'leri null'a cevir
     if (data.branch_id === '') {
@@ -222,6 +261,7 @@ export class UserService {
     const user = this.userRepository.create({
       ...data,
       password: hashedPassword,
+      plain_password: plainPassword, // Plain text şifreyi sakla
       is_deleted: false,
     });
 
@@ -245,7 +285,8 @@ export class UserService {
       console.log('⚠️ SMS gönderilemedi (yeni kullanıcı): Telefon numarası bulunamadı');
     }
 
-    const { password, ...userWithoutPassword } = user;
+    // Güvenlik: plain_password ve password'ü response'dan çıkar
+    const { password, plain_password, ...userWithoutPassword } = user;
     return {
       ...userWithoutPassword,
       is_active: user.status === EntityStatus.ACTIVE,
@@ -286,6 +327,8 @@ export class UserService {
 
     if (data.password) {
       data.password = await hashPassword(data.password);
+      // Plain text şifreyi de sakla (SADECE SUPER_ADMIN için gösterilecek)
+      (data as any).plain_password = newPassword;
     }
 
     // Foreign key'ler icin bos string'leri null'a cevir
@@ -313,7 +356,8 @@ export class UserService {
       }
     }
 
-    const { password, ...userWithoutPassword } = user;
+    // Güvenlik: plain_password ve password'ü response'dan çıkar
+    const { password, plain_password, ...userWithoutPassword } = user;
     return {
       ...userWithoutPassword,
       is_active: user.status === EntityStatus.ACTIVE,
@@ -358,7 +402,8 @@ export class UserService {
 
     await this.userRepository.save(user);
 
-    const { password, ...userWithoutPassword } = user;
+    // GÜVENLİK: plain_password ve password'ü response'dan çıkar
+    const { password, plain_password, ...userWithoutPassword } = user;
     return {
       ...userWithoutPassword,
       is_active: user.status === EntityStatus.ACTIVE,
@@ -378,7 +423,8 @@ export class UserService {
     user.permissions = permissions;
     await this.userRepository.save(user);
 
-    const { password, ...userWithoutPassword } = user;
+    // GÜVENLİK: plain_password ve password'ü response'dan çıkar
+    const { password, plain_password, ...userWithoutPassword } = user;
     return {
       ...userWithoutPassword,
       is_active: user.status === EntityStatus.ACTIVE,
