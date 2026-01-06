@@ -79,17 +79,9 @@ export class StatsService {
       .addSelect('SUM(sale.price)', 'revenue')
       .where('sale.created_at >= :startDate', { startDate: sevenDaysAgo });
     
-    // Tenant filter'ı SONRA uygula (andWhere ile)
+    // Tenant filter'ı SONRA uygula (applyTenantFilter kullan)
     if (filter && Object.keys(filter).length > 0) {
-      if (filter.agency_id) {
-        dailySalesQb.andWhere('sale.agency_id = :agency_id', { agency_id: filter.agency_id });
-      }
-      if (filter.branch_id) {
-        dailySalesQb.andWhere('sale.branch_id = :branch_id', { branch_id: filter.branch_id });
-      }
-      if (filter.created_by) {
-        dailySalesQb.andWhere('sale.user_id = :created_by', { created_by: filter.created_by });
-      }
+      applyTenantFilter(dailySalesQb, filter, 'sale', 'user_id');
     }
 
     const dailySalesRaw = await dailySalesQb
@@ -132,17 +124,9 @@ export class StatsService {
       .addSelect('COUNT(sale.id)', 'count')
       .addSelect('SUM(sale.price)', 'revenue');
     
-    // Filter varsa WHERE clause ekle
+    // Filter varsa WHERE clause ekle (applyTenantFilter kullan)
     if (filter && Object.keys(filter).length > 0) {
-      if (filter.agency_id) {
-        monthlySalesQb.where('sale.agency_id = :agency_id', { agency_id: filter.agency_id });
-      }
-      if (filter.branch_id) {
-        monthlySalesQb.andWhere('sale.branch_id = :branch_id', { branch_id: filter.branch_id });
-      }
-      if (filter.created_by) {
-        monthlySalesQb.andWhere('sale.user_id = :created_by', { created_by: filter.created_by });
-      }
+      applyTenantFilter(monthlySalesQb, filter, 'sale', 'user_id');
     }
     
     const monthlySalesRaw = await monthlySalesQb
@@ -170,17 +154,9 @@ export class StatsService {
       .select('package.name', 'name')
       .addSelect('COUNT(sale.id)', 'count');
 
-    // Filter varsa WHERE clause ekle
+    // Filter varsa WHERE clause ekle (applyTenantFilter kullan)
     if (filter && Object.keys(filter).length > 0) {
-      if (filter.agency_id) {
-        topPackagesQb.where('sale.agency_id = :agency_id', { agency_id: filter.agency_id });
-      }
-      if (filter.branch_id) {
-        topPackagesQb.andWhere('sale.branch_id = :branch_id', { branch_id: filter.branch_id });
-      }
-      if (filter.created_by) {
-        topPackagesQb.andWhere('sale.user_id = :created_by', { created_by: filter.created_by });
-      }
+      applyTenantFilter(topPackagesQb, filter, 'sale', 'user_id');
     }
 
     const topPackagesRaw = await topPackagesQb
@@ -194,33 +170,46 @@ export class StatsService {
     }));
 
     // ===== ACENTE PERFORMANS KARŞILAŞTIRMASI =====
-    // Bu sadece Super Admin için anlamlı - diğer roller için boş döner
-    // Çünkü acente admin zaten kendi acentesinin verilerini görüyor
+    // SUPER_ADMIN ve SUPER_AGENCY_ADMIN için anlamlı - diğer roller için boş döner
     let agencyPerformance: any[] = [];
     
-    // Eğer filter varsa (yani Super Admin değilse) agencyPerformance boş kalır
-    // Super Admin için filter undefined gelir
-    if (!filter || !filter.agency_id) {
-    const agencyPerformanceRaw = await this.saleRepository
-      .createQueryBuilder('sale')
-      .leftJoin('sale.agency', 'agency')
-      .select('agency.id', 'id')
-      .addSelect('agency.name', 'name')
-      .addSelect('COUNT(sale.id)', 'salesCount')
-      .addSelect('SUM(sale.price)', 'totalRevenue')
-      .addSelect('SUM(sale.commission)', 'totalCommission')
-      .groupBy('agency.id')
-      .orderBy('totalRevenue', 'DESC')
-      .limit(10)
-      .getRawMany();
+    // SUPER_ADMIN için filter undefined gelir veya userRole yok
+    // SUPER_AGENCY_ADMIN için managed_agency_ids var ve agency_id undefined
+    // AGENCY_ADMIN ve diğerleri için agency_id var, onlar için gösterme
+    const isSuperAdmin = !filter || (!filter.userRole || filter.userRole === 'SUPER_ADMIN');
+    const isSuperAgencyAdmin = filter && filter.userRole === 'SUPER_AGENCY_ADMIN' && !filter.agency_id;
+    const shouldShowAgencyPerformance = isSuperAdmin || (isSuperAgencyAdmin && filter.managed_agency_ids && filter.managed_agency_ids.length > 0);
+    
+    if (shouldShowAgencyPerformance) {
+      const agencyPerformanceQb = this.saleRepository
+        .createQueryBuilder('sale')
+        .leftJoin('sale.agency', 'agency')
+        .select('agency.id', 'id')
+        .addSelect('agency.name', 'name')
+        .addSelect('COUNT(sale.id)', 'salesCount')
+        .addSelect('SUM(sale.price)', 'totalRevenue')
+        .addSelect('SUM(sale.commission)', 'totalCommission');
+      
+      // SUPER_AGENCY_ADMIN için sadece yönettiği brokerları göster
+      if (isSuperAgencyAdmin && filter.managed_agency_ids && filter.managed_agency_ids.length > 0) {
+        agencyPerformanceQb.where('sale.agency_id IN (:...managedAgencyIds)', {
+          managedAgencyIds: filter.managed_agency_ids,
+        });
+      }
+      
+      const agencyPerformanceRaw = await agencyPerformanceQb
+        .groupBy('agency.id')
+        .orderBy('totalRevenue', 'DESC')
+        .limit(10)
+        .getRawMany();
 
       agencyPerformance = agencyPerformanceRaw.map((item: any) => ({
-      id: item.id,
-      name: item.name || 'Bilinmeyen Acente',
-      salesCount: parseInt(item.salesCount) || 0,
-      totalRevenue: parseFloat(item.totalRevenue) || 0,
-      totalCommission: parseFloat(item.totalCommission) || 0,
-    }));
+        id: item.id,
+        name: item.name || 'Bilinmeyen Acente',
+        salesCount: parseInt(item.salesCount) || 0,
+        totalRevenue: parseFloat(item.totalRevenue) || 0,
+        totalCommission: parseFloat(item.totalCommission) || 0,
+      }));
     }
 
     // ===== İADE İSTATİSTİKLERİ =====
@@ -228,14 +217,9 @@ export class StatsService {
     const refundStatsQb = this.saleRepository.createQueryBuilder('sale')
       .where('sale.is_refunded = :isRefunded', { isRefunded: true });
     
-    // Tenant filter uygula
+    // Tenant filter uygula (applyTenantFilter kullan)
     if (filter && Object.keys(filter).length > 0) {
-      if (filter.agency_id) {
-        refundStatsQb.andWhere('sale.agency_id = :agency_id', { agency_id: filter.agency_id });
-      }
-      if (filter.branch_id) {
-        refundStatsQb.andWhere('sale.branch_id = :branch_id', { branch_id: filter.branch_id });
-      }
+      applyTenantFilter(refundStatsQb, filter, 'sale', 'user_id');
     }
 
     // Toplam iade sayısı ve tutarı
@@ -254,14 +238,9 @@ export class StatsService {
       .orderBy('sale.refunded_at', 'DESC')
       .limit(10);
 
-    // Tenant filter uygula
+    // Tenant filter uygula (applyTenantFilter kullan)
     if (filter && Object.keys(filter).length > 0) {
-      if (filter.agency_id) {
-        recentRefundsQb.andWhere('sale.agency_id = :agency_id', { agency_id: filter.agency_id });
-      }
-      if (filter.branch_id) {
-        recentRefundsQb.andWhere('sale.branch_id = :branch_id', { branch_id: filter.branch_id });
-      }
+      applyTenantFilter(recentRefundsQb, filter, 'sale', 'user_id');
     }
 
     const recentRefunds = await recentRefundsQb.getMany();
