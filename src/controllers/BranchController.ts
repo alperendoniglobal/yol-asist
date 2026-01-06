@@ -56,7 +56,8 @@ export class BranchController {
   // Sube guncelle
   update = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
-    const branch = await this.branchService.update(id, req.body);
+    // SUPER_AGENCY_ADMIN için currentUser'ı gönder (sadece kendi brokerlarının acentelerini düzenleyebilmesi için)
+    const branch = await this.branchService.update(id, req.body, req.user);
     successResponse(res, branch, 'Sube basariyla guncellendi');
   });
 

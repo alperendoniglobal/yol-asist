@@ -228,8 +228,30 @@ export class BranchService {
   }
 
   // Sube guncelle
-  async update(id: string, data: Partial<Branch>) {
+  async update(id: string, data: Partial<Branch>, currentUser?: any) {
     const branch = await this.getById(id);
+    
+    // SUPER_AGENCY_ADMIN sadece kendi yönettiği brokerların acentelerini düzenleyebilir
+    if (currentUser?.role === UserRole.SUPER_AGENCY_ADMIN) {
+      const userAgencyRepository = AppDataSource.getRepository(UserAgency);
+      const userAgencies = await userAgencyRepository.find({
+        where: { user_id: currentUser.id },
+      });
+      
+      const managedAgencyIds = userAgencies.map(ua => ua.agency_id);
+      
+      // Mevcut acentenin brokerı yönettiği brokerlardan biri olmalı
+      if (!managedAgencyIds.includes(branch.agency_id)) {
+        throw new AppError(403, 'Bu acenteyi düzenleme yetkiniz yok. Sadece yönettiğiniz brokerların acentelerini düzenleyebilirsiniz.');
+      }
+      
+      // Eğer agency_id değiştiriliyorsa, yeni agency_id de yönettiği brokerlardan biri olmalı
+      if (data.agency_id && data.agency_id !== branch.agency_id) {
+        if (!managedAgencyIds.includes(data.agency_id)) {
+          throw new AppError(403, 'Bu brokerı seçme yetkiniz yok. Sadece yönettiğiniz brokerları seçebilirsiniz.');
+        }
+      }
+    }
     
     // Komisyon oranı güncelleniyorsa validasyon yap
     if (data.commission_rate !== undefined) {
@@ -239,15 +261,64 @@ export class BranchService {
       }
 
       // Acentenin komisyon oranını kontrol et - şube komisyonu acenteden fazla olamaz
-      const agency = await this.agencyRepository.findOne({ where: { id: branch.agency_id } });
+      // Eğer agency_id değiştiriliyorsa yeni agency'yi kontrol et, yoksa mevcut agency'yi kontrol et
+      const agencyIdToCheck = data.agency_id || branch.agency_id;
+      const agency = await this.agencyRepository.findOne({ where: { id: agencyIdToCheck } });
       if (agency && Number(data.commission_rate) > Number(agency.commission_rate)) {
         throw new AppError(400, `Sube komisyon orani acente komisyon oranindan (${agency.commission_rate}%) fazla olamaz`);
       }
     }
 
-    Object.assign(branch, data);
-    await this.branchRepository.save(branch);
-    return branch;
+    // Foreign key'ler için boş string'leri null'a çevir
+    if (data.agency_id === '') {
+      data.agency_id = null as any;
+    }
+    
+    // Debug: agency_id değişikliğini logla
+    console.log('🔍 Branch Update Debug:', {
+      branchId: id,
+      currentAgencyId: branch.agency_id,
+      newAgencyId: data.agency_id,
+      agencyIdChanged: data.agency_id !== undefined && data.agency_id !== branch.agency_id
+    });
+    
+    // agency_id değişikliğini direkt olarak uygula (TypeORM için)
+    if (data.agency_id !== undefined && data.agency_id !== null) {
+      branch.agency_id = data.agency_id;
+      console.log('✅ agency_id güncellendi:', branch.agency_id);
+    }
+    
+    // Diğer alanları güncelle
+    if (data.name !== undefined) branch.name = data.name;
+    if (data.address !== undefined) branch.address = data.address;
+    if (data.phone !== undefined) branch.phone = data.phone;
+    if (data.commission_rate !== undefined) branch.commission_rate = data.commission_rate;
+    if (data.account_name !== undefined) branch.account_name = data.account_name;
+    if (data.iban !== undefined) branch.iban = data.iban;
+    
+    // TypeORM update metodunu kullan (daha güvenilir)
+    const updateData: any = {};
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.address !== undefined) updateData.address = data.address;
+    if (data.phone !== undefined) updateData.phone = data.phone;
+    if (data.commission_rate !== undefined) updateData.commission_rate = data.commission_rate;
+    if (data.account_name !== undefined) updateData.account_name = data.account_name;
+    if (data.iban !== undefined) updateData.iban = data.iban;
+    if (data.agency_id !== undefined) updateData.agency_id = data.agency_id;
+    
+    console.log('📝 Update Data:', updateData);
+    
+    // Update metodunu kullan (save yerine - daha güvenilir)
+    await this.branchRepository.update(id, updateData);
+    
+    // Güncellenmiş branch'i relations olmadan tekrar getir (agency_id değişikliğini görmek için)
+    const updatedBranch = await this.branchRepository.findOne({
+      where: { id },
+    });
+    
+    console.log('✅ Güncellenmiş Branch:', updatedBranch?.agency_id);
+    
+    return updatedBranch || branch;
   }
 
   // Sube sil
