@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { AgencyController } from '../controllers/AgencyController';
-import { authMiddleware, tenantMiddleware, superAdminOnly } from '../middlewares';
+import { authMiddleware, tenantMiddleware, superAdminOnly, superAdminOrSuperAgencyAdmin } from '../middlewares';
 
 const router = Router();
 const agencyController = new AgencyController();
@@ -12,7 +12,8 @@ router.use(tenantMiddleware);
 // CRUD operations
 router.get('/', agencyController.getAll);
 router.get('/:id', agencyController.getById);
-router.post('/', superAdminOnly, agencyController.create);
+// SUPER_AGENCY_ADMIN da broker oluşturabilir
+router.post('/', superAdminOrSuperAgencyAdmin, agencyController.create);
 router.put('/:id', superAdminOnly, agencyController.update);
 router.delete('/:id', superAdminOnly, agencyController.delete);
 

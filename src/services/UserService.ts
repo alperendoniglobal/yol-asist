@@ -3,6 +3,7 @@ import { User } from '../entities/User';
 import { Agency } from '../entities/Agency';
 import { Sale } from '../entities/Sale';
 import { Customer } from '../entities/Customer';
+import { UserAgency } from '../entities/UserAgency';
 import { AppError } from '../middlewares/errorHandler';
 import { applyTenantFilter } from '../middlewares/tenantMiddleware';
 import { In } from 'typeorm';
@@ -15,6 +16,7 @@ export class UserService {
   private agencyRepository = AppDataSource.getRepository(Agency);
   private saleRepository = AppDataSource.getRepository(Sale);
   private customerRepository = AppDataSource.getRepository(Customer);
+  private userAgencyRepository = AppDataSource.getRepository(UserAgency);
 
   // Tum kullanicilari getir (silinen kullanicilar haric)
   // Şube yöneticisi sadece kendi şubesindeki kullanıcıları görebilir (acente yöneticisini göremez)
@@ -270,6 +272,40 @@ export class UserService {
 
     await this.userRepository.save(user);
 
+    // SUPER_AGENCY_ADMIN rolünde kullanıcı oluşturulduğunda, seçilen agency_id'yi user_agencies tablosuna ekle
+    if (user.role === UserRole.SUPER_AGENCY_ADMIN && user.agency_id) {
+      try {
+        // Önce agency'nin var olup olmadığını kontrol et
+        const agency = await this.agencyRepository.findOne({
+          where: { id: user.agency_id },
+        });
+
+        if (agency) {
+          // user_agencies tablosuna ekle
+          const existingAssignment = await this.userAgencyRepository.findOne({
+            where: { user_id: user.id, agency_id: user.agency_id },
+          });
+
+          if (!existingAssignment) {
+            const userAgency = this.userAgencyRepository.create({
+              user_id: user.id,
+              agency_id: user.agency_id,
+            });
+            await this.userAgencyRepository.save(userAgency);
+            console.log(`✅ SUPER_AGENCY_ADMIN user ${user.id} için agency ${user.agency_id} user_agencies tablosuna eklendi`);
+          } else {
+            console.log(`⚠️ SUPER_AGENCY_ADMIN user ${user.id} için agency ${user.agency_id} zaten user_agencies tablosunda mevcut`);
+          }
+        } else {
+          console.log(`⚠️ SUPER_AGENCY_ADMIN user ${user.id} için agency ${user.agency_id} bulunamadı`);
+        }
+      } catch (error: any) {
+        // user_agencies ekleme hatası ana işlemi etkilememeli, sadece log yaz
+        console.error('❌ user_agencies ekleme hatası:', error.message);
+        console.error('❌ user_agencies ekleme hatası (stack):', error.stack);
+      }
+    }
+
     // SMS gönderme işlemi (hata durumunda ana işlemi etkilememeli)
     if (user.phone) {
       try {
@@ -435,9 +471,9 @@ export class UserService {
   }
 
   /**
-   * AGENCY_ADMIN kullanıcısına acente atama
+   * SUPER_AGENCY_ADMIN kullanıcısına broker atama
    * @param userId - Kullanıcı ID'si
-   * @param agencyId - Acente ID'si
+   * @param agencyId - Broker ID'si
    */
   async assignAgency(userId: string, agencyId: string) {
     const user = await this.userRepository.findOne({
@@ -448,27 +484,28 @@ export class UserService {
       throw new AppError(404, 'Kullanıcı bulunamadı');
     }
 
-    // Sadece AGENCY_ADMIN rolüne acente atanabilir
-    if (user.role !== UserRole.AGENCY_ADMIN) {
-      throw new AppError(400, 'Sadece acente yöneticilerine acente atanabilir');
+    // Sadece SUPER_AGENCY_ADMIN rolüne broker atanabilir
+    if (user.role !== UserRole.SUPER_AGENCY_ADMIN) {
+      throw new AppError(400, 'Sadece süper broker yöneticilerine broker atanabilir');
     }
 
-    // Acente var mı kontrol et
+    // Broker var mı kontrol et
     const agency = await this.agencyRepository.findOne({
       where: { id: agencyId },
     });
 
     if (!agency) {
-      throw new AppError(404, 'Acente bulunamadı');
+      throw new AppError(404, 'Broker bulunamadı');
     }
 
-    // managed_agency_ids array'ini al veya oluştur
-    const managedAgencyIds = user.managed_agency_ids || [];
+    // Zaten atanmış mı kontrol et
+    const existingUserAgency = await this.userAgencyRepository.findOne({
+      where: { user_id: userId, agency_id: agencyId },
+    });
 
-    // Acente zaten listede varsa hata verme, sadece return et
-    if (managedAgencyIds.includes(agencyId)) {
+    if (existingUserAgency) {
       return {
-        message: 'Acente zaten kullanıcıya atanmış',
+        message: 'Broker zaten kullanıcıya atanmış',
         user: {
           ...user,
           is_active: user.status === EntityStatus.ACTIVE,
@@ -476,15 +513,17 @@ export class UserService {
       };
     }
 
-    // Acente ID'sini listeye ekle
-    managedAgencyIds.push(agencyId);
-    user.managed_agency_ids = managedAgencyIds;
-    await this.userRepository.save(user);
+    // Junction table'a kayıt ekle
+    const userAgency = this.userAgencyRepository.create({
+      user_id: userId,
+      agency_id: agencyId,
+    });
+    await this.userAgencyRepository.save(userAgency);
 
     // GÜVENLİK: plain_password ve password'ü response'dan çıkar
     const { password, plain_password, ...userWithoutPassword } = user;
     return {
-      message: 'Acente başarıyla atandı',
+      message: 'Broker başarıyla atandı',
       user: {
         ...userWithoutPassword,
         is_active: user.status === EntityStatus.ACTIVE,
@@ -493,9 +532,9 @@ export class UserService {
   }
 
   /**
-   * AGENCY_ADMIN kullanıcısından acente kaldırma
+   * SUPER_AGENCY_ADMIN kullanıcısından broker kaldırma
    * @param userId - Kullanıcı ID'si
-   * @param agencyId - Acente ID'si
+   * @param agencyId - Broker ID'si
    */
   async removeAgency(userId: string, agencyId: string) {
     const user = await this.userRepository.findOne({
@@ -506,22 +545,22 @@ export class UserService {
       throw new AppError(404, 'Kullanıcı bulunamadı');
     }
 
-    // managed_agency_ids array'ini al
-    const managedAgencyIds = user.managed_agency_ids || [];
+    // Broker atanmış mı kontrol et
+    const userAgency = await this.userAgencyRepository.findOne({
+      where: { user_id: userId, agency_id: agencyId },
+    });
 
-    // Acente listede yoksa hata ver
-    if (!managedAgencyIds.includes(agencyId)) {
-      throw new AppError(400, 'Bu acente kullanıcıya atanmamış');
+    if (!userAgency) {
+      throw new AppError(400, 'Bu broker kullanıcıya atanmamış');
     }
 
-    // Acente ID'sini listeden çıkar
-    user.managed_agency_ids = managedAgencyIds.filter(id => id !== agencyId);
-    await this.userRepository.save(user);
+    // Junction table'dan kayıt sil
+    await this.userAgencyRepository.remove(userAgency);
 
     // GÜVENLİK: plain_password ve password'ü response'dan çıkar
     const { password, plain_password, ...userWithoutPassword } = user;
     return {
-      message: 'Acente başarıyla kaldırıldı',
+      message: 'Broker başarıyla kaldırıldı',
       user: {
         ...userWithoutPassword,
         is_active: user.status === EntityStatus.ACTIVE,
@@ -530,7 +569,7 @@ export class UserService {
   }
 
   /**
-   * Kullanıcının yönettiği acenteleri getir
+   * Kullanıcının yönettiği brokerları getir
    * @param userId - Kullanıcı ID'si
    */
   async getManagedAgencies(userId: string) {
@@ -542,17 +581,13 @@ export class UserService {
       throw new AppError(404, 'Kullanıcı bulunamadı');
     }
 
-    const managedAgencyIds = user.managed_agency_ids || [];
-
-    if (managedAgencyIds.length === 0) {
-      return [];
-    }
-
-    // Acenteleri getir
-    const agencies = await this.agencyRepository.find({
-      where: { id: In(managedAgencyIds) },
+    // Junction table'dan broker ID'lerini al
+    const userAgencies = await this.userAgencyRepository.find({
+      where: { user_id: userId },
+      relations: ['agency'],
     });
 
-    return agencies;
+    // Agency objelerini döndür
+    return userAgencies.map(ua => ua.agency);
   }
 }

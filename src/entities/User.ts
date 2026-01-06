@@ -15,6 +15,7 @@ import { Customer } from './Customer';
 import { Sale } from './Sale';
 import { SupportTicket } from './SupportTicket';
 import { SupportMessage } from './SupportMessage';
+import { UserAgency } from './UserAgency';
 
 @Entity('users')
 export class User {
@@ -58,11 +59,6 @@ export class User {
   @Column({ type: 'json', nullable: true })
   permissions: Record<string, any>;
 
-  // AGENCY_ADMIN için yönettiği acente ID'leri (JSON array)
-  // Bir kullanıcı birden fazla acenteyi yönetebilir
-  @Column({ type: 'json', nullable: true, comment: 'AGENCY_ADMIN için yönettiği acente ID\'leri (JSON array)' })
-  managed_agency_ids: string[] | null;
-
   @Column({
     type: 'enum',
     enum: EntityStatus,
@@ -105,4 +101,8 @@ export class User {
 
   @OneToMany(() => SupportMessage, message => message.sender)
   support_messages: SupportMessage[];
+
+  // SUPER_AGENCY_ADMIN için yönettiği brokerlar (junction table üzerinden)
+  @OneToMany(() => UserAgency, userAgency => userAgency.user)
+  managedAgencies: UserAgency[];
 }

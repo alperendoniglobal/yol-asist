@@ -1,26 +1,31 @@
 import { Request, Response, NextFunction } from 'express';
 import { UserRole } from '../types/enums';
+import { AppDataSource } from '../config/database';
+import { UserAgency } from '../entities/UserAgency';
 
 /**
  * Multi-tenancy middleware that automatically filters data based on user role:
  * - SUPER_ADMIN: No filter (can see all data)
  * - SUPPORT: No filter (can see all data - global support role)
+ * - SUPER_AGENCY_ADMIN: Filter by selected agency_id (can manage multiple agencies)
  * - AGENCY_ADMIN: Filter by agency_id
  * - BRANCH_ADMIN: Filter by agency_id + branch_id
  * - BRANCH_USER: Filter by agency_id + branch_id + created_by
  */
-export const tenantMiddleware = (
+export const tenantMiddleware = async (
   req: Request,
   res: Response,
   next: NextFunction
-): void => {
+): Promise<void> => {
   if (!req.user) {
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }
 
   // Initialize tenant filter
-  req.tenantFilter = {};
+  req.tenantFilter = {
+    userRole: req.user.role, // User role'ü filtreye ekle (SUPER_AGENCY_ADMIN kontrolü için)
+  };
 
   switch (req.user.role) {
     case UserRole.SUPER_ADMIN:
@@ -31,46 +36,40 @@ export const tenantMiddleware = (
       // SUPPORT can see all data - no filter applied (global support role)
       break;
 
-    case UserRole.AGENCY_ADMIN:
-      // AGENCY_ADMIN can manage multiple agencies
-      // Read selected agency ID from header (case-insensitive)
-      const selectedAgencyId = (req.headers['x-selected-agency-id'] || 
-                                req.headers['X-Selected-Agency-Id'] ||
-                                req.headers['X-SELECTED-AGENCY-ID']) as string;
+    case UserRole.SUPER_AGENCY_ADMIN:
+      // SUPER_AGENCY_ADMIN can manage multiple agencies
+      // Get user's managed agencies from junction table
+      const userAgencyRepository = AppDataSource.getRepository(UserAgency);
+      const userAgencies = await userAgencyRepository.find({
+        where: { user_id: req.user.id },
+      });
       
-      // Get user's managed agencies
-      const managedAgencyIds = req.user.managed_agency_ids || [];
+      const managedAgencyIdsSuper = userAgencies.map(ua => ua.agency_id);
       
-      // If user has managed agencies
-      if (managedAgencyIds.length > 0) {
-        // If header provides an agency ID, validate it
-        if (selectedAgencyId && selectedAgencyId.trim() !== '') {
-          // Security check: verify user can manage the selected agency
-          if (managedAgencyIds.includes(selectedAgencyId.trim())) {
-            req.tenantFilter.agency_id = selectedAgencyId.trim();
-          } else {
-            res.status(403).json({ 
-              error: 'Bu acenteyi yönetme yetkiniz yok',
-              message: 'Seçilen acente, yönettiğiniz acenteler listesinde bulunmuyor'
-            });
-            return;
-          }
-        } else {
-          // No header provided, use first managed agency as default
-          req.tenantFilter.agency_id = managedAgencyIds[0];
-        }
+      // SUPER_AGENCY_ADMIN tüm yönettiği brokerların verilerini görebilir (SUPER_ADMIN gibi)
+      // Filtreleme yapmıyoruz, sadece managedAgencyIds'i saklıyoruz (güvenlik için)
+      if (managedAgencyIdsSuper.length > 0) {
+        // Tüm yönettiği brokerları dahil etmek için managed_agency_ids'i sakla
+        req.tenantFilter.managed_agency_ids = managedAgencyIdsSuper;
+        // agency_id'yi undefined bırak ki tüm yönettiği brokerların verileri gelsin
+        req.tenantFilter.agency_id = undefined;
       } else {
-        // Fallback: use old agency_id if managed_agency_ids is empty (backward compatibility)
-        if (req.user.agency_id) {
-          req.tenantFilter.agency_id = req.user.agency_id;
-        } else {
-          res.status(403).json({ 
-            error: 'Acente yöneticisi için acente atanmamış',
-            message: 'Lütfen sistem yöneticisi ile iletişime geçin'
-          });
-          return;
-        }
+        // Hiç broker yoksa, tenantFilter'ı boş bırak
+        req.tenantFilter.agency_id = undefined;
+        req.tenantFilter.managed_agency_ids = [];
       }
+      break;
+
+    case UserRole.AGENCY_ADMIN:
+      // AGENCY_ADMIN - Tek bir acenteyi yönetir (agency_id üzerinden)
+      if (!req.user.agency_id) {
+        res.status(403).json({ 
+          error: 'Acente yöneticisi için acente atanmamış',
+          message: 'Lütfen sistem yöneticisi ile iletişime geçin'
+        });
+        return;
+      }
+      req.tenantFilter.agency_id = req.user.agency_id;
       break;
 
     case UserRole.BRANCH_ADMIN:
@@ -125,14 +124,37 @@ export const applyTenantFilter = (
   alias: string,
   userIdColumn: string = 'created_by'
 ): void => {
-  // Agency filtresi uygula
-  if (filter.agency_id) {
-    queryBuilder.andWhere(`${alias}.agency_id = :agency_id`, {
-      agency_id: filter.agency_id,
-    });
+  // SUPER_AGENCY_ADMIN için özel kontrol: Tüm yönettiği brokerların verilerini göster
+  if (filter.userRole === 'SUPER_AGENCY_ADMIN' && filter.managed_agency_ids) {
+    if (filter.managed_agency_ids.length > 0) {
+      // Tüm yönettiği brokerları dahil et
+      queryBuilder.andWhere(`${alias}.agency_id IN (:...managedAgencyIds)`, {
+        managedAgencyIds: filter.managed_agency_ids,
+      });
+    } else {
+      // Hiç broker yoksa hiçbir veri gösterilmemeli
+      queryBuilder.andWhere('1 = 0');
+      return; // Hiç broker yoksa diğer filtreleri uygulamaya gerek yok
+    }
+    // SUPER_AGENCY_ADMIN için normal agency_id filtresi uygulanmaz, ama branch_id ve created_by uygulanabilir
+    // return yapmıyoruz, branch_id ve created_by filtreleri de uygulanabilir
+  } else {
+    // SUPER_AGENCY_ADMIN için özel kontrol: Eğer agency_id undefined ise ve managed_agency_ids yoksa hiçbir veri gösterilmemeli
+    if (filter.agency_id === undefined && filter.userRole === 'SUPER_AGENCY_ADMIN' && !filter.managed_agency_ids) {
+      // Hiçbir veri döndürmemek için her zaman false olan bir koşul ekle
+      queryBuilder.andWhere('1 = 0');
+      return;
+    }
+
+    // Agency filtresi uygula
+    if (filter.agency_id) {
+      queryBuilder.andWhere(`${alias}.agency_id = :agency_id`, {
+        agency_id: filter.agency_id,
+      });
+    }
   }
 
-  // Branch filtresi uygula
+  // Branch filtresi uygula (tüm roller için)
   if (filter.branch_id) {
     queryBuilder.andWhere(`${alias}.branch_id = :branch_id`, {
       branch_id: filter.branch_id,
@@ -156,6 +178,20 @@ export const applyAgencyFilter = (
   filter: any,
   alias: string
 ): void => {
+  // SUPER_AGENCY_ADMIN için özel kontrol: Tüm yönettiği brokerların verilerini göster
+  if (filter.userRole === 'SUPER_AGENCY_ADMIN' && filter.managed_agency_ids) {
+    if (filter.managed_agency_ids.length > 0) {
+      // Tüm yönettiği brokerları dahil et
+      queryBuilder.andWhere(`${alias}.agency_id IN (:...managedAgencyIds)`, {
+        managedAgencyIds: filter.managed_agency_ids,
+      });
+    } else {
+      // Hiç broker yoksa hiçbir veri gösterilmemeli
+      queryBuilder.andWhere('1 = 0');
+    }
+    return;
+  }
+
   if (filter.agency_id) {
     queryBuilder.andWhere(`${alias}.agency_id = :agency_id`, {
       agency_id: filter.agency_id,

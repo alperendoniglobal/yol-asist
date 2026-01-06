@@ -15,6 +15,7 @@ import { Sale } from './Sale';
 import { Payment } from './Payment';
 import { CommissionRequest } from './CommissionRequest';
 import { SupportTicket } from './SupportTicket';
+import { UserAgency } from './UserAgency';
 
 /**
  * Acente
@@ -120,4 +121,8 @@ export class Agency {
 
   @OneToMany(() => SupportTicket, ticket => ticket.agency)
   support_tickets: SupportTicket[];
+
+  // SUPER_AGENCY_ADMIN kullanıcılar tarafından yönetilir (junction table üzerinden)
+  @OneToMany(() => UserAgency, userAgency => userAgency.agency)
+  managedByUsers: UserAgency[];
 }

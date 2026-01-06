@@ -2,6 +2,7 @@ export { authMiddleware } from './authMiddleware';
 export {
   roleMiddleware,
   superAdminOnly,
+  superAdminOrSuperAgencyAdmin,
   agencyAdminOrAbove,
   branchAdminOrAbove,
   allRoles,

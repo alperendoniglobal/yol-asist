@@ -1,6 +1,7 @@
 import { AppDataSource } from '../config/database';
 import { User } from '../entities/User';
 import { Agency } from '../entities/Agency';
+import { UserAgency } from '../entities/UserAgency';
 import { In } from 'typeorm';
 import { hashPassword, comparePassword } from '../utils/hash';
 import { generateAccessToken, generateRefreshToken, verifyToken } from '../utils/jwt';
@@ -11,6 +12,7 @@ import { SmsService } from './SmsService';
 export class AuthService {
   private userRepository = AppDataSource.getRepository(User);
   private agencyRepository = AppDataSource.getRepository(Agency);
+  private userAgencyRepository = AppDataSource.getRepository(UserAgency);
 
   async login(email: string, password: string) {
     const user = await this.userRepository.findOne({
@@ -45,34 +47,60 @@ export class AuthService {
     const accessToken = generateAccessToken(payload);
     const refreshToken = generateRefreshToken(payload);
 
-    // AGENCY_ADMIN için yönettiği acenteleri getir
+    // SUPER_AGENCY_ADMIN için yönettiği brokerları getir
     let managedAgencies = undefined;
-    if (user.role === UserRole.AGENCY_ADMIN && user.managed_agency_ids && user.managed_agency_ids.length > 0) {
+    if (user.role === UserRole.SUPER_AGENCY_ADMIN) {
       try {
-        // managed_agency_ids array'indeki ID'lerle acenteleri getir
-        // TypeORM'de In() kullanarak sorgu yap
-        managedAgencies = await this.agencyRepository.find({
-          where: { id: In(user.managed_agency_ids) },
+        // Junction table'dan brokerları getir
+        let userAgencies = await this.userAgencyRepository.find({
+          where: { user_id: user.id },
+          relations: ['agency'],
         });
+        
+        // Eğer user_agencies tablosunda kayıt yoksa ama agency_id varsa, otomatik ekle
+        if (userAgencies.length === 0 && user.agency_id) {
+          // Önce agency'nin var olup olmadığını kontrol et
+          const agency = await this.agencyRepository.findOne({
+            where: { id: user.agency_id },
+          });
+          
+          if (agency) {
+            // user_agencies tablosuna ekle
+            const userAgency = this.userAgencyRepository.create({
+              user_id: user.id,
+              agency_id: user.agency_id,
+            });
+            await this.userAgencyRepository.save(userAgency);
+            
+            // Tekrar getir
+            userAgencies = await this.userAgencyRepository.find({
+              where: { user_id: user.id },
+              relations: ['agency'],
+            });
+            
+            console.log(`✅ User ${user.id} için agency ${user.agency_id} otomatik olarak user_agencies tablosuna eklendi`);
+          }
+        }
+        
         // Sadece gerekli alanları döndür
-        managedAgencies = managedAgencies.map(agency => ({
-          id: agency.id,
-          name: agency.name,
-          tax_number: agency.tax_number,
-          address: agency.address,
-          phone: agency.phone,
-          email: agency.email,
-          commission_rate: agency.commission_rate,
-          balance: agency.balance,
-          status: agency.status,
-          logo: agency.logo,
-          account_name: agency.account_name,
-          iban: agency.iban,
-          created_at: agency.created_at,
-          updated_at: agency.updated_at,
+        managedAgencies = userAgencies.map(ua => ({
+          id: ua.agency.id,
+          name: ua.agency.name,
+          tax_number: ua.agency.tax_number,
+          address: ua.agency.address,
+          phone: ua.agency.phone,
+          email: ua.agency.email,
+          commission_rate: ua.agency.commission_rate,
+          balance: ua.agency.balance,
+          status: ua.agency.status,
+          logo: ua.agency.logo,
+          account_name: ua.agency.account_name,
+          iban: ua.agency.iban,
+          created_at: ua.agency.created_at,
+          updated_at: ua.agency.updated_at,
         }));
       } catch (error) {
-        console.error('Yönetilen acenteler getirilirken hata:', error);
+        console.error('Yönetilen brokerlar getirilirken hata:', error);
         // Hata durumunda managedAgencies undefined kalır
       }
     }

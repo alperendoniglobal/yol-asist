@@ -29,7 +29,7 @@ export const authMiddleware = async (
     const userRepository = AppDataSource.getRepository(User);
     const user = await userRepository.findOne({
       where: { id: decoded.userId },
-      relations: ['agency', 'branch'],
+      relations: ['agency', 'branch', 'managedAgencies', 'managedAgencies.agency'],
     });
 
     if (!user) {

@@ -3,20 +3,41 @@ import { Agency } from '../entities/Agency';
 import { Sale } from '../entities/Sale';
 import { Customer } from '../entities/Customer';
 import { Branch } from '../entities/Branch';
+import { UserAgency } from '../entities/UserAgency';
 import { AppError } from '../middlewares/errorHandler';
+import { UserRole } from '../types/enums';
 
 export class AgencyService {
   private agencyRepository = AppDataSource.getRepository(Agency);
   private saleRepository = AppDataSource.getRepository(Sale);
   private customerRepository = AppDataSource.getRepository(Customer);
   private branchRepository = AppDataSource.getRepository(Branch);
+  private userAgencyRepository = AppDataSource.getRepository(UserAgency);
 
-  async getAll(filter?: any) {
+  async getAll(filter?: any, currentUser?: any) {
     const queryBuilder = this.agencyRepository
       .createQueryBuilder('agency')
       .leftJoinAndSelect('agency.branches', 'branches');
 
-    if (filter?.agency_id) {
+    // SUPER_AGENCY_ADMIN için özel filtreleme: Sadece yönettiği brokerları göster
+    if (currentUser?.role === UserRole.SUPER_AGENCY_ADMIN) {
+      // user_agencies tablosundan kullanıcının yönettiği broker ID'lerini al
+      const userAgencies = await this.userAgencyRepository.find({
+        where: { user_id: currentUser.id },
+      });
+      
+      const managedAgencyIds = userAgencies.map(ua => ua.agency_id);
+      
+      if (managedAgencyIds.length > 0) {
+        // Sadece yönettiği brokerları göster (user_agencies tablosundan)
+        // NOT: Eğer created_by kolonu eklenirse, oluşturduğu brokerları da ekleyebiliriz
+        queryBuilder.where('agency.id IN (:...agencyIds)', { agencyIds: managedAgencyIds });
+      } else {
+        // Hiç broker yönetmiyorsa boş liste döndür
+        queryBuilder.where('1 = 0'); // Her zaman false olan bir koşul
+      }
+    } else if (filter?.agency_id) {
+      // Diğer roller için normal filtreleme
       queryBuilder.where('agency.id = :agency_id', { agency_id: filter.agency_id });
     }
 
@@ -60,6 +81,30 @@ export class AgencyService {
     const agency = await this.getById(id);
     await this.agencyRepository.remove(agency);
     return { message: 'Agency deleted successfully' };
+  }
+
+  /**
+   * SUPER_AGENCY_ADMIN'a broker atama
+   * Broker oluşturulduğunda otomatik olarak oluşturan kullanıcıya atanır
+   * @param agencyId - Broker ID
+   * @param userId - Kullanıcı ID
+   */
+  async assignAgencyToUser(agencyId: string, userId: string) {
+    // Zaten atanmış mı kontrol et
+    const existing = await this.userAgencyRepository.findOne({
+      where: { user_id: userId, agency_id: agencyId },
+    });
+
+    if (existing) {
+      return; // Zaten atanmış
+    }
+
+    // Junction table'a kayıt ekle
+    const userAgency = this.userAgencyRepository.create({
+      user_id: userId,
+      agency_id: agencyId,
+    });
+    await this.userAgencyRepository.save(userAgency);
   }
 
   async getStats(agencyId: string) {
