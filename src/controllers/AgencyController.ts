@@ -48,13 +48,15 @@ export class AgencyController {
 
   update = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
-    const agency = await this.agencyService.update(id, req.body);
+    // SUPER_AGENCY_ADMIN için currentUser'ı gönder (sadece kendi brokerlarını düzenleyebilmesi için)
+    const agency = await this.agencyService.update(id, req.body, req.user);
     successResponse(res, agency, 'Agency updated successfully');
   });
 
   delete = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
-    const result = await this.agencyService.delete(id);
+    // SUPER_AGENCY_ADMIN için currentUser'ı gönder (sadece kendi brokerlarını silebilmesi için)
+    const result = await this.agencyService.delete(id, req.user);
     successResponse(res, result, 'Agency deleted successfully');
   });
 

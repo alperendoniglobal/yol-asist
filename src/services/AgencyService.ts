@@ -68,8 +68,21 @@ export class AgencyService {
     return agency;
   }
 
-  async update(id: string, data: Partial<Agency>) {
+  async update(id: string, data: Partial<Agency>, currentUser?: any) {
     const agency = await this.getById(id);
+
+    // SUPER_AGENCY_ADMIN sadece kendi yönettiği brokerları düzenleyebilir
+    if (currentUser?.role === UserRole.SUPER_AGENCY_ADMIN) {
+      const userAgencies = await this.userAgencyRepository.find({
+        where: { user_id: currentUser.id },
+      });
+      
+      const managedAgencyIds = userAgencies.map(ua => ua.agency_id);
+      
+      if (!managedAgencyIds.includes(id)) {
+        throw new AppError(403, 'Bu brokerı düzenleme yetkiniz yok. Sadece yönettiğiniz brokerları düzenleyebilirsiniz.');
+      }
+    }
 
     Object.assign(agency, data);
     await this.agencyRepository.save(agency);
@@ -77,8 +90,22 @@ export class AgencyService {
     return agency;
   }
 
-  async delete(id: string) {
+  async delete(id: string, currentUser?: any) {
     const agency = await this.getById(id);
+
+    // SUPER_AGENCY_ADMIN sadece kendi yönettiği brokerları silebilir
+    if (currentUser?.role === UserRole.SUPER_AGENCY_ADMIN) {
+      const userAgencies = await this.userAgencyRepository.find({
+        where: { user_id: currentUser.id },
+      });
+      
+      const managedAgencyIds = userAgencies.map(ua => ua.agency_id);
+      
+      if (!managedAgencyIds.includes(id)) {
+        throw new AppError(403, 'Bu brokerı silme yetkiniz yok. Sadece yönettiğiniz brokerları silebilirsiniz.');
+      }
+    }
+
     await this.agencyRepository.remove(agency);
     return { message: 'Agency deleted successfully' };
   }

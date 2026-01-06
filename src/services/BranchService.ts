@@ -4,9 +4,10 @@ import { Sale } from '../entities/Sale';
 import { Customer } from '../entities/Customer';
 import { User } from '../entities/User';
 import { Agency } from '../entities/Agency';
+import { UserAgency } from '../entities/UserAgency';
 import { AppError } from '../middlewares/errorHandler';
 import { applyTenantFilter } from '../middlewares/tenantMiddleware';
-import { EntityStatus } from '../types/enums';
+import { EntityStatus, UserRole } from '../types/enums';
 
 export class BranchService {
   private branchRepository = AppDataSource.getRepository(Branch);
@@ -16,12 +17,29 @@ export class BranchService {
   private agencyRepository = AppDataSource.getRepository(Agency);
 
   // Tum subeleri getir
-  async getAll(filter?: any) {
+  async getAll(filter?: any, currentUser?: any) {
     const queryBuilder = this.branchRepository
       .createQueryBuilder('branch')
       .leftJoinAndSelect('branch.agency', 'agency');
 
-    if (filter) {
+    // SUPER_AGENCY_ADMIN için özel filtreleme: Sadece yönettiği brokerların acentelerini göster
+    if (currentUser?.role === UserRole.SUPER_AGENCY_ADMIN) {
+      const userAgencyRepository = AppDataSource.getRepository(UserAgency);
+      const userAgencies = await userAgencyRepository.find({
+        where: { user_id: currentUser.id },
+      });
+      
+      const managedAgencyIds = userAgencies.map(ua => ua.agency_id);
+      
+      if (managedAgencyIds.length > 0) {
+        // Sadece yönettiği brokerların acentelerini göster
+        queryBuilder.where('branch.agency_id IN (:...agencyIds)', { agencyIds: managedAgencyIds });
+      } else {
+        // Hiç broker yönetmiyorsa boş liste döndür
+        queryBuilder.where('1 = 0'); // Her zaman false olan bir koşul
+      }
+    } else if (filter) {
+      // Diğer roller için normal filtreleme
       // Agency filtresi uygula
       if (filter.agency_id) {
         queryBuilder.andWhere('branch.agency_id = :agency_id', {
@@ -295,12 +313,29 @@ export class BranchService {
    * Tüm şubeleri komisyon bilgileriyle birlikte getirir
    * Her şubenin kendi komisyon oranı vardır
    */
-  async getAllWithCommission(filter?: any) {
+  async getAllWithCommission(filter?: any, currentUser?: any) {
     const queryBuilder = this.branchRepository
       .createQueryBuilder('branch')
       .leftJoinAndSelect('branch.agency', 'agency');
 
-    if (filter) {
+    // SUPER_AGENCY_ADMIN için özel filtreleme: Sadece yönettiği brokerların acentelerini göster
+    if (currentUser?.role === UserRole.SUPER_AGENCY_ADMIN) {
+      const userAgencyRepository = AppDataSource.getRepository(UserAgency);
+      const userAgencies = await userAgencyRepository.find({
+        where: { user_id: currentUser.id },
+      });
+      
+      const managedAgencyIds = userAgencies.map(ua => ua.agency_id);
+      
+      if (managedAgencyIds.length > 0) {
+        // Sadece yönettiği brokerların acentelerini göster
+        queryBuilder.where('branch.agency_id IN (:...agencyIds)', { agencyIds: managedAgencyIds });
+      } else {
+        // Hiç broker yönetmiyorsa boş liste döndür
+        queryBuilder.where('1 = 0'); // Her zaman false olan bir koşul
+      }
+    } else if (filter) {
+      // Diğer roller için normal filtreleme
       // Agency filtresi uygula
       if (filter.agency_id) {
         queryBuilder.andWhere('branch.agency_id = :agency_id', {

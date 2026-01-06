@@ -12,10 +12,10 @@ router.use(tenantMiddleware);
 // CRUD operations
 router.get('/', agencyController.getAll);
 router.get('/:id', agencyController.getById);
-// SUPER_AGENCY_ADMIN da broker oluşturabilir
+// SUPER_AGENCY_ADMIN da broker oluşturabilir, kendi brokerlarını düzenleyebilir ve silebilir
 router.post('/', superAdminOrSuperAgencyAdmin, agencyController.create);
-router.put('/:id', superAdminOnly, agencyController.update);
-router.delete('/:id', superAdminOnly, agencyController.delete);
+router.put('/:id', superAdminOrSuperAgencyAdmin, agencyController.update);
+router.delete('/:id', superAdminOrSuperAgencyAdmin, agencyController.delete);
 
 // Statistics
 router.get('/:id/stats', agencyController.getStats);

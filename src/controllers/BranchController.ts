@@ -15,12 +15,13 @@ export class BranchController {
     // Komisyon bilgisi de dahil edilsin mi?
     const includeCommission = req.query.includeCommission === 'true';
     
+    // SUPER_AGENCY_ADMIN için currentUser'ı gönder (yönettiği brokerların acentelerini filtrelemek için)
     let branches;
     if (includeCommission) {
       // Efektif komisyon oranlarıyla birlikte getir
-      branches = await this.branchService.getAllWithCommission(req.tenantFilter);
+      branches = await this.branchService.getAllWithCommission(req.tenantFilter, req.user);
     } else {
-      branches = await this.branchService.getAll(req.tenantFilter);
+      branches = await this.branchService.getAll(req.tenantFilter, req.user);
     }
     
     successResponse(res, branches, 'Subeler basariyla getirildi');
