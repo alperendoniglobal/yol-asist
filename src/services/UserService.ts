@@ -381,6 +381,41 @@ export class UserService {
     Object.assign(user, data);
     await this.userRepository.save(user);
 
+    // SUPER_AGENCY_ADMIN rolü güncellendiğinde veya agency_id değiştirildiğinde, user_agencies tablosuna ekle
+    // Eğer kullanıcının rolü SUPER_AGENCY_ADMIN ise ve agency_id varsa, user_agencies tablosuna ekle
+    if (user.role === UserRole.SUPER_AGENCY_ADMIN && user.agency_id) {
+      try {
+        // Önce agency'nin var olup olmadığını kontrol et
+        const agency = await this.agencyRepository.findOne({
+          where: { id: user.agency_id },
+        });
+
+        if (agency) {
+          // user_agencies tablosuna ekle (varsa ekleme)
+          const existingAssignment = await this.userAgencyRepository.findOne({
+            where: { user_id: user.id, agency_id: user.agency_id },
+          });
+
+          if (!existingAssignment) {
+            const userAgency = this.userAgencyRepository.create({
+              user_id: user.id,
+              agency_id: user.agency_id,
+            });
+            await this.userAgencyRepository.save(userAgency);
+            console.log(`✅ SUPER_AGENCY_ADMIN user ${user.id} için agency ${user.agency_id} user_agencies tablosuna eklendi (güncelleme)`);
+          } else {
+            console.log(`⚠️ SUPER_AGENCY_ADMIN user ${user.id} için agency ${user.agency_id} zaten user_agencies tablosunda mevcut (güncelleme)`);
+          }
+        } else {
+          console.log(`⚠️ SUPER_AGENCY_ADMIN user ${user.id} için agency ${user.agency_id} bulunamadı (güncelleme)`);
+        }
+      } catch (error: any) {
+        // user_agencies ekleme hatası ana işlemi etkilememeli, sadece log yaz
+        console.error('❌ user_agencies ekleme hatası (güncelleme):', error.message);
+        console.error('❌ user_agencies ekleme hatası (stack):', error.stack);
+      }
+    }
+
     // Şifre değiştirildiyse SMS gönder
     if (passwordChanged && newPassword && user.phone) {
       try {
