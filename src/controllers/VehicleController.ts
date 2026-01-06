@@ -23,8 +23,9 @@ export class VehicleController {
 
   create = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     // Super Admin için agency_id ve branch_id null kalır = "Sistem" kaydı
-    const agency_id = req.user?.agency_id || null;
-    const branch_id = req.user?.branch_id || null;
+    // AGENCY_ADMIN için seçili broker'ı kullan (req.tenantFilter.agency_id)
+    const agency_id = req.tenantFilter?.agency_id || req.user?.agency_id || null;
+    const branch_id = req.tenantFilter?.branch_id || req.user?.branch_id || null;
 
     const vehicleData = {
       ...req.body,
@@ -67,8 +68,9 @@ export class VehicleController {
   // Araç bul veya oluştur (satış akışı için)
   findOrCreate = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     // Super Admin için agency_id ve branch_id null kalır = "Sistem" kaydı
-    const agency_id = req.user?.agency_id || null;
-    const branch_id = req.user?.branch_id || null;
+    // AGENCY_ADMIN için seçili broker'ı kullan (req.tenantFilter.agency_id)
+    const agency_id = req.tenantFilter?.agency_id || req.user?.agency_id || null;
+    const branch_id = req.tenantFilter?.branch_id || req.user?.branch_id || null;
 
     const vehicleData = {
       ...req.body,

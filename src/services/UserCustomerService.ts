@@ -52,6 +52,23 @@ export class UserCustomerService {
       throw new AppError(400, 'Bu e-posta adresi ile kayıtlı bir hesap zaten var');
     }
 
+    // Telefon numarası kontrolü - formatla ve kontrol et
+    let formattedPhone = data.phone.replace(/\s+/g, ''); // Boşlukları kaldır
+    if (formattedPhone.startsWith('+90')) {
+      formattedPhone = formattedPhone.substring(3);
+    }
+    if (formattedPhone.startsWith('0')) {
+      formattedPhone = formattedPhone.substring(1);
+    }
+    formattedPhone = formattedPhone.replace(/\D/g, ''); // Sadece rakamlar
+    
+    const existingByPhone = await this.userCustomerRepository.findOne({
+      where: { phone: formattedPhone },
+    });
+    if (existingByPhone) {
+      throw new AppError(400, 'Bu telefon numarası zaten kullanılıyor. Lütfen farklı bir telefon numarası deneyin.');
+    }
+
     // Şifreyi hashle
     const hashedPassword = await hashPassword(data.password);
 
@@ -61,7 +78,7 @@ export class UserCustomerService {
       name: data.name,
       surname: data.surname,
       email: data.email,
-      phone: data.phone,
+      phone: formattedPhone, // Formatlanmış telefon numarasını kullan
       password: hashedPassword,
       city: data.city,
       district: data.district,

@@ -23,9 +23,10 @@ export class CustomerController {
 
   create = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     // Super Admin için agency_id ve branch_id null kalır = "Sistem" kaydı
-    // Diğer kullanıcılar için kendi acentesi/şubesi atanır
-    let agency_id = req.user?.agency_id || null;
-    let branch_id = req.user?.branch_id || null;
+    // Diğer kullanıcılar için seçili broker/şube atanır
+    // AGENCY_ADMIN için req.tenantFilter.agency_id kullanılır (seçili broker)
+    let agency_id = req.tenantFilter?.agency_id || req.user?.agency_id || null;
+    let branch_id = req.tenantFilter?.branch_id || req.user?.branch_id || null;
 
     const customerData = {
       ...req.body,

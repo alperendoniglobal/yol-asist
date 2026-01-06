@@ -37,7 +37,21 @@ export class UserController {
   // Yeni kullanici olustur
   // SUPPORT rolü sadece SUPER_ADMIN tarafından oluşturulabilir
   create = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-    const user = await this.userService.create(req.body, req.user);
+    // AGENCY_ADMIN için seçili broker'ı kullan (req.tenantFilter.agency_id)
+    // Eğer body'de agency_id yoksa veya SUPER_ADMIN değilse tenantFilter'dan al
+    const userData = { ...req.body };
+    
+    // AGENCY_ADMIN için seçili broker'ı kullan
+    if (req.tenantFilter?.agency_id && !userData.agency_id) {
+      userData.agency_id = req.tenantFilter.agency_id;
+    }
+    
+    // Branch için de aynı mantık
+    if (req.tenantFilter?.branch_id && !userData.branch_id) {
+      userData.branch_id = req.tenantFilter.branch_id;
+    }
+    
+    const user = await this.userService.create(userData, req.user);
     successResponse(res, user, 'Kullanici basariyla olusturuldu', 201);
   });
 
@@ -71,5 +85,26 @@ export class UserController {
     const { permissions } = req.body;
     const user = await this.userService.updatePermissions(id, permissions);
     successResponse(res, user, 'Izinler basariyla guncellendi');
+  });
+
+  // AGENCY_ADMIN kullanıcısına broker atama
+  assignAgency = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { id, agencyId } = req.params;
+    const user = await this.userService.assignAgency(id, agencyId);
+    successResponse(res, user, 'Broker basariyla atandi');
+  });
+
+  // AGENCY_ADMIN kullanıcısından broker kaldırma
+  removeAgency = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { id, agencyId } = req.params;
+    const user = await this.userService.removeAgency(id, agencyId);
+    successResponse(res, user, 'Broker basariyla kaldirildi');
+  });
+
+  // Kullanıcının yönettiği brokerları getir
+  getManagedAgencies = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { id } = req.params;
+    const agencies = await this.userService.getManagedAgencies(id);
+    successResponse(res, agencies, 'Yonetilen brokerlar basariyla getirildi');
   });
 }

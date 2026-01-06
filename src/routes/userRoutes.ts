@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { UserController } from '../controllers/UserController';
-import { authMiddleware, tenantMiddleware, branchAdminOrAbove } from '../middlewares';
+import { authMiddleware, tenantMiddleware, branchAdminOrAbove, superAdminOnly } from '../middlewares';
 
 const router = Router();
 const userController = new UserController();
@@ -28,5 +28,15 @@ router.patch('/:id/toggle-status', branchAdminOrAbove, userController.toggleStat
 
 // Izinleri guncelle
 router.put('/:id/permissions', branchAdminOrAbove, userController.updatePermissions);
+
+// Broker yönetimi (Sadece SUPER_ADMIN için)
+// AGENCY_ADMIN kullanıcısına broker atama
+router.post('/:id/agencies/:agencyId', superAdminOnly, userController.assignAgency);
+
+// AGENCY_ADMIN kullanıcısından broker kaldırma
+router.delete('/:id/agencies/:agencyId', superAdminOnly, userController.removeAgency);
+
+// Kullanıcının yönettiği brokerları getir
+router.get('/:id/agencies', branchAdminOrAbove, userController.getManagedAgencies);
 
 export default router;

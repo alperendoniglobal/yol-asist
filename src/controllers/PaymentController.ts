@@ -22,9 +22,10 @@ export class PaymentController {
   });
 
   create = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    // AGENCY_ADMIN için seçili broker'ı kullan (req.tenantFilter.agency_id)
     const paymentData = {
       ...req.body,
-      agency_id: req.user?.agency_id || req.body.agency_id,
+      agency_id: req.tenantFilter?.agency_id || req.user?.agency_id || req.body.agency_id,
     };
     const payment = await this.paymentService.create(paymentData);
     successResponse(res, payment, 'Payment created successfully', 201);

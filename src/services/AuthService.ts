@@ -1,13 +1,16 @@
 import { AppDataSource } from '../config/database';
 import { User } from '../entities/User';
+import { Agency } from '../entities/Agency';
+import { In } from 'typeorm';
 import { hashPassword, comparePassword } from '../utils/hash';
 import { generateAccessToken, generateRefreshToken, verifyToken } from '../utils/jwt';
 import { AppError } from '../middlewares/errorHandler';
-import { EntityStatus } from '../types/enums';
+import { EntityStatus, UserRole } from '../types/enums';
 import { SmsService } from './SmsService';
 
 export class AuthService {
   private userRepository = AppDataSource.getRepository(User);
+  private agencyRepository = AppDataSource.getRepository(Agency);
 
   async login(email: string, password: string) {
     const user = await this.userRepository.findOne({
@@ -16,16 +19,16 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new AppError(401, 'Invalid credentials');
+      throw new AppError(401, 'E-posta veya şifre hatalı');
     }
 
     if (user.status !== EntityStatus.ACTIVE) {
-      throw new AppError(403, 'Account is not active');
+      throw new AppError(403, 'Hesabınız aktif değil');
     }
 
     const isPasswordValid = await comparePassword(password, user.password);
     if (!isPasswordValid) {
-      throw new AppError(401, 'Invalid credentials');
+      throw new AppError(401, 'E-posta veya şifre hatalı');
     }
 
     // Plain text şifreyi güncelle - her login'de güncel şifre girildiği için plain_password'ü güncelle
@@ -42,6 +45,38 @@ export class AuthService {
     const accessToken = generateAccessToken(payload);
     const refreshToken = generateRefreshToken(payload);
 
+    // AGENCY_ADMIN için yönettiği acenteleri getir
+    let managedAgencies = undefined;
+    if (user.role === UserRole.AGENCY_ADMIN && user.managed_agency_ids && user.managed_agency_ids.length > 0) {
+      try {
+        // managed_agency_ids array'indeki ID'lerle acenteleri getir
+        // TypeORM'de In() kullanarak sorgu yap
+        managedAgencies = await this.agencyRepository.find({
+          where: { id: In(user.managed_agency_ids) },
+        });
+        // Sadece gerekli alanları döndür
+        managedAgencies = managedAgencies.map(agency => ({
+          id: agency.id,
+          name: agency.name,
+          tax_number: agency.tax_number,
+          address: agency.address,
+          phone: agency.phone,
+          email: agency.email,
+          commission_rate: agency.commission_rate,
+          balance: agency.balance,
+          status: agency.status,
+          logo: agency.logo,
+          account_name: agency.account_name,
+          iban: agency.iban,
+          created_at: agency.created_at,
+          updated_at: agency.updated_at,
+        }));
+      } catch (error) {
+        console.error('Yönetilen acenteler getirilirken hata:', error);
+        // Hata durumunda managedAgencies undefined kalır
+      }
+    }
+
     return {
       user: {
         id: user.id,
@@ -57,6 +92,7 @@ export class AuthService {
       },
       accessToken,
       refreshToken,
+      ...(managedAgencies && { managed_agencies: managedAgencies }),
     };
   }
 
@@ -66,11 +102,11 @@ export class AuthService {
     });
 
     if (existingUser) {
-      throw new AppError(400, 'Email already exists');
+      throw new AppError(400, 'Bu e-posta adresi zaten kullanılıyor');
     }
 
     if (!userData.password) {
-      throw new AppError(400, 'Password is required');
+      throw new AppError(400, 'Şifre zorunludur');
     }
 
     const hashedPassword = await hashPassword(userData.password);
@@ -103,7 +139,7 @@ export class AuthService {
       });
 
       if (!user || user.status !== EntityStatus.ACTIVE) {
-        throw new AppError(401, 'Invalid refresh token');
+        throw new AppError(401, 'Geçersiz token');
       }
 
       const payload = {
@@ -120,7 +156,7 @@ export class AuthService {
         refreshToken: newRefreshToken,
       };
     } catch (error) {
-      throw new AppError(401, 'Invalid refresh token');
+      throw new AppError(401, 'Geçersiz token');
     }
   }
 
@@ -130,12 +166,12 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new AppError(404, 'User not found');
+      throw new AppError(404, 'Kullanıcı bulunamadı');
     }
 
     const isPasswordValid = await comparePassword(oldPassword, user.password);
     if (!isPasswordValid) {
-      throw new AppError(401, 'Current password is incorrect');
+      throw new AppError(401, 'Mevcut şifre yanlış');
     }
 
     const hashedPassword = await hashPassword(newPassword);
@@ -169,7 +205,7 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new AppError(404, 'User not found');
+      throw new AppError(404, 'Kullanıcı bulunamadı');
     }
 
     const { password, ...userWithoutPassword } = user;

@@ -22,10 +22,11 @@ export class SupportController {
   });
 
   createTicket = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    // AGENCY_ADMIN için seçili broker'ı kullan (req.tenantFilter.agency_id)
     const ticketData = {
       ...req.body,
-      agency_id: req.user?.agency_id,
-      branch_id: req.user?.branch_id,
+      agency_id: req.tenantFilter?.agency_id || req.user?.agency_id || null,
+      branch_id: req.tenantFilter?.branch_id || req.user?.branch_id || null,
       user_id: req.user?.id,
     };
     const ticket = await this.supportService.createTicket(ticketData);

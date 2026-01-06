@@ -1,15 +1,18 @@
 import { AppDataSource } from '../config/database';
 import { User } from '../entities/User';
+import { Agency } from '../entities/Agency';
 import { Sale } from '../entities/Sale';
 import { Customer } from '../entities/Customer';
 import { AppError } from '../middlewares/errorHandler';
 import { applyTenantFilter } from '../middlewares/tenantMiddleware';
+import { In } from 'typeorm';
 import { hashPassword } from '../utils/hash';
 import { EntityStatus, UserRole } from '../types/enums';
 import { SmsService } from './SmsService';
 
 export class UserService {
   private userRepository = AppDataSource.getRepository(User);
+  private agencyRepository = AppDataSource.getRepository(Agency);
   private saleRepository = AppDataSource.getRepository(Sale);
   private customerRepository = AppDataSource.getRepository(Customer);
 
@@ -198,29 +201,29 @@ export class UserService {
     } else {
       // GÜVENLİK: Diğer kullanıcılar için password ve plain_password döndürülmez
       const { password, plain_password, ...userWithoutPassword } = user;
-      return {
-        ...userWithoutPassword,
-        is_active: user.status === EntityStatus.ACTIVE,
-        activity: {
-          total_sales: parseInt(salesStats?.total_sales || '0'),
-          total_revenue: parseFloat(salesStats?.total_revenue || '0'),
-          total_commission: parseFloat(salesStats?.total_commission || '0'),
-          customer_count: customerCount,
-          vehicle_count: parseInt(vehicleCount?.count || '0'),
-          recent_sales: recentSales.map(sale => ({
-            id: sale.id,
-            customer_name: sale.customer?.name || 'Bilinmiyor',
-            package_name: sale.package?.name || 'Bilinmiyor',
-            price: sale.price,
-            created_at: sale.created_at,
-          })),
-          monthly_sales: monthlySales.map((item: any) => ({
-            month: item.month,
-            count: parseInt(item.count) || 0,
-            revenue: parseFloat(item.revenue) || 0,
-          })),
-        },
-      };
+    return {
+      ...userWithoutPassword,
+      is_active: user.status === EntityStatus.ACTIVE,
+      activity: {
+        total_sales: parseInt(salesStats?.total_sales || '0'),
+        total_revenue: parseFloat(salesStats?.total_revenue || '0'),
+        total_commission: parseFloat(salesStats?.total_commission || '0'),
+        customer_count: customerCount,
+        vehicle_count: parseInt(vehicleCount?.count || '0'),
+        recent_sales: recentSales.map(sale => ({
+          id: sale.id,
+          customer_name: sale.customer?.name || 'Bilinmiyor',
+          package_name: sale.package?.name || 'Bilinmiyor',
+          price: sale.price,
+          created_at: sale.created_at,
+        })),
+        monthly_sales: monthlySales.map((item: any) => ({
+          month: item.month,
+          count: parseInt(item.count) || 0,
+          revenue: parseFloat(item.revenue) || 0,
+        })),
+      },
+    };
     }
   }
 
@@ -429,5 +432,127 @@ export class UserService {
       ...userWithoutPassword,
       is_active: user.status === EntityStatus.ACTIVE,
     };
+  }
+
+  /**
+   * AGENCY_ADMIN kullanıcısına acente atama
+   * @param userId - Kullanıcı ID'si
+   * @param agencyId - Acente ID'si
+   */
+  async assignAgency(userId: string, agencyId: string) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId, is_deleted: false },
+    });
+
+    if (!user) {
+      throw new AppError(404, 'Kullanıcı bulunamadı');
+    }
+
+    // Sadece AGENCY_ADMIN rolüne acente atanabilir
+    if (user.role !== UserRole.AGENCY_ADMIN) {
+      throw new AppError(400, 'Sadece acente yöneticilerine acente atanabilir');
+    }
+
+    // Acente var mı kontrol et
+    const agency = await this.agencyRepository.findOne({
+      where: { id: agencyId },
+    });
+
+    if (!agency) {
+      throw new AppError(404, 'Acente bulunamadı');
+    }
+
+    // managed_agency_ids array'ini al veya oluştur
+    const managedAgencyIds = user.managed_agency_ids || [];
+
+    // Acente zaten listede varsa hata verme, sadece return et
+    if (managedAgencyIds.includes(agencyId)) {
+      return {
+        message: 'Acente zaten kullanıcıya atanmış',
+        user: {
+          ...user,
+          is_active: user.status === EntityStatus.ACTIVE,
+        },
+      };
+    }
+
+    // Acente ID'sini listeye ekle
+    managedAgencyIds.push(agencyId);
+    user.managed_agency_ids = managedAgencyIds;
+    await this.userRepository.save(user);
+
+    // GÜVENLİK: plain_password ve password'ü response'dan çıkar
+    const { password, plain_password, ...userWithoutPassword } = user;
+    return {
+      message: 'Acente başarıyla atandı',
+      user: {
+        ...userWithoutPassword,
+        is_active: user.status === EntityStatus.ACTIVE,
+      },
+    };
+  }
+
+  /**
+   * AGENCY_ADMIN kullanıcısından acente kaldırma
+   * @param userId - Kullanıcı ID'si
+   * @param agencyId - Acente ID'si
+   */
+  async removeAgency(userId: string, agencyId: string) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId, is_deleted: false },
+    });
+
+    if (!user) {
+      throw new AppError(404, 'Kullanıcı bulunamadı');
+    }
+
+    // managed_agency_ids array'ini al
+    const managedAgencyIds = user.managed_agency_ids || [];
+
+    // Acente listede yoksa hata ver
+    if (!managedAgencyIds.includes(agencyId)) {
+      throw new AppError(400, 'Bu acente kullanıcıya atanmamış');
+    }
+
+    // Acente ID'sini listeden çıkar
+    user.managed_agency_ids = managedAgencyIds.filter(id => id !== agencyId);
+    await this.userRepository.save(user);
+
+    // GÜVENLİK: plain_password ve password'ü response'dan çıkar
+    const { password, plain_password, ...userWithoutPassword } = user;
+    return {
+      message: 'Acente başarıyla kaldırıldı',
+      user: {
+        ...userWithoutPassword,
+        is_active: user.status === EntityStatus.ACTIVE,
+      },
+    };
+  }
+
+  /**
+   * Kullanıcının yönettiği acenteleri getir
+   * @param userId - Kullanıcı ID'si
+   */
+  async getManagedAgencies(userId: string) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId, is_deleted: false },
+    });
+
+    if (!user) {
+      throw new AppError(404, 'Kullanıcı bulunamadı');
+    }
+
+    const managedAgencyIds = user.managed_agency_ids || [];
+
+    if (managedAgencyIds.length === 0) {
+      return [];
+    }
+
+    // Acenteleri getir
+    const agencies = await this.agencyRepository.find({
+      where: { id: In(managedAgencyIds) },
+    });
+
+    return agencies;
   }
 }

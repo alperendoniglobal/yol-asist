@@ -58,6 +58,11 @@ export class User {
   @Column({ type: 'json', nullable: true })
   permissions: Record<string, any>;
 
+  // AGENCY_ADMIN için yönettiği acente ID'leri (JSON array)
+  // Bir kullanıcı birden fazla acenteyi yönetebilir
+  @Column({ type: 'json', nullable: true, comment: 'AGENCY_ADMIN için yönettiği acente ID\'leri (JSON array)' })
+  managed_agency_ids: string[] | null;
+
   @Column({
     type: 'enum',
     enum: EntityStatus,

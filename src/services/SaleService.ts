@@ -213,7 +213,7 @@ export class SaleService {
       .getOne();
 
     if (!sale) {
-      throw new AppError(404, 'Sale not found');
+      throw new AppError(404, 'Satış bulunamadı');
     }
 
     // Vehicle'ı normalize et - brand ve model her zaman gelsin
@@ -380,7 +380,7 @@ export class SaleService {
     const sale = await this.saleRepository.findOne({ where: { id } });
 
     if (!sale) {
-      throw new AppError(404, 'Sale not found');
+      throw new AppError(404, 'Satış bulunamadı');
     }
 
     Object.assign(sale, data);
@@ -393,7 +393,7 @@ export class SaleService {
     const sale = await this.saleRepository.findOne({ where: { id } });
 
     if (!sale) {
-      throw new AppError(404, 'Sale not found');
+      throw new AppError(404, 'Satış bulunamadı');
     }
 
     await this.saleRepository.remove(sale);
@@ -411,6 +411,87 @@ export class SaleService {
    * 4. Ödeme işle
    */
   async completeSale(input: CompleteSaleInput) {
+    // ÖNCE VALİDASYON KONTROLLERİ - Eksik alanları kontrol et
+    const missingFields: string[] = [];
+    
+    // Müşteri bilgileri kontrolü
+    if (!input.customer) {
+      missingFields.push('Müşteri bilgileri');
+    } else {
+      if (!input.customer.name || input.customer.name.trim() === '') {
+        missingFields.push('Müşteri adı');
+      }
+      if (!input.customer.tc_vkn || input.customer.tc_vkn.trim() === '') {
+        missingFields.push('T.C. Kimlik No / Vergi No');
+      }
+      if (!input.customer.phone || input.customer.phone.trim() === '') {
+        missingFields.push('Müşteri telefon numarası');
+      }
+    }
+    
+    // Araç bilgileri kontrolü
+    if (!input.vehicle) {
+      missingFields.push('Araç bilgileri');
+    } else {
+      if (!input.vehicle.plate || input.vehicle.plate.trim() === '') {
+        missingFields.push('Plaka numarası');
+      }
+      if (!input.vehicle.model_year) {
+        missingFields.push('Model yılı');
+      }
+      if (!input.vehicle.usage_type) {
+        missingFields.push('Kullanım tipi');
+      }
+      if (!input.vehicle.vehicle_type) {
+        missingFields.push('Araç tipi');
+      }
+      // Otomobil için marka ve model kontrolü
+      if (input.vehicle.vehicle_type !== 'Motosiklet') {
+        if (!input.vehicle.brand_id) {
+          missingFields.push('Araç markası');
+        }
+        if (!input.vehicle.model_id) {
+          missingFields.push('Araç modeli');
+        }
+      } else {
+        // Motosiklet için motor marka ve model kontrolü
+        if (!input.vehicle.motor_brand_id) {
+          missingFields.push('Motor markası');
+        }
+        if (!input.vehicle.motor_model_id) {
+          missingFields.push('Motor modeli');
+        }
+      }
+    }
+    
+    // Satış bilgileri kontrolü
+    if (!input.sale) {
+      missingFields.push('Satış bilgileri');
+    } else {
+      if (!input.sale.package_id) {
+        missingFields.push('Paket');
+      }
+      if (!input.sale.start_date) {
+        missingFields.push('Başlangıç tarihi');
+      }
+      if (!input.sale.end_date) {
+        missingFields.push('Bitiş tarihi');
+      }
+      if (!input.sale.price || input.sale.price <= 0) {
+        missingFields.push('Satış fiyatı (0\'dan büyük olmalı)');
+      }
+    }
+    
+    // Ödeme bilgileri kontrolü
+    if (!input.payment || !input.payment.type) {
+      missingFields.push('Ödeme tipi');
+    }
+    
+    // Eksik alan varsa hata fırlat
+    if (missingFields.length > 0) {
+      throw new AppError(400, `Eksik bilgiler: ${missingFields.join(', ')}. Lütfen tüm zorunlu alanları doldurun.`);
+    }
+    
     // Transaction başlat - hata olursa tüm işlemler geri alınır
     const queryRunner = AppDataSource.createQueryRunner();
     await queryRunner.connect();

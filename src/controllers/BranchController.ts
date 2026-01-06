@@ -42,7 +42,13 @@ export class BranchController {
 
   // Yeni sube olustur
   create = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-    const branch = await this.branchService.create(req.body);
+    // AGENCY_ADMIN için seçili broker'ı kullan (req.tenantFilter.agency_id)
+    // Eğer body'de agency_id yoksa tenantFilter'dan al
+    const branchData = {
+      ...req.body,
+      agency_id: req.body.agency_id || req.tenantFilter?.agency_id || null,
+    };
+    const branch = await this.branchService.create(branchData);
     successResponse(res, branch, 'Sube basariyla olusturuldu', 201);
   });
 

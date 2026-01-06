@@ -32,12 +32,45 @@ export const tenantMiddleware = (
       break;
 
     case UserRole.AGENCY_ADMIN:
-      // AGENCY_ADMIN can only see their agency's data
-      if (!req.user.agency_id) {
-        res.status(403).json({ error: 'Agency admin must have an agency assigned' });
-        return;
+      // AGENCY_ADMIN can manage multiple agencies
+      // Read selected agency ID from header (case-insensitive)
+      const selectedAgencyId = (req.headers['x-selected-agency-id'] || 
+                                req.headers['X-Selected-Agency-Id'] ||
+                                req.headers['X-SELECTED-AGENCY-ID']) as string;
+      
+      // Get user's managed agencies
+      const managedAgencyIds = req.user.managed_agency_ids || [];
+      
+      // If user has managed agencies
+      if (managedAgencyIds.length > 0) {
+        // If header provides an agency ID, validate it
+        if (selectedAgencyId && selectedAgencyId.trim() !== '') {
+          // Security check: verify user can manage the selected agency
+          if (managedAgencyIds.includes(selectedAgencyId.trim())) {
+            req.tenantFilter.agency_id = selectedAgencyId.trim();
+          } else {
+            res.status(403).json({ 
+              error: 'Bu acenteyi yönetme yetkiniz yok',
+              message: 'Seçilen acente, yönettiğiniz acenteler listesinde bulunmuyor'
+            });
+            return;
+          }
+        } else {
+          // No header provided, use first managed agency as default
+          req.tenantFilter.agency_id = managedAgencyIds[0];
+        }
+      } else {
+        // Fallback: use old agency_id if managed_agency_ids is empty (backward compatibility)
+        if (req.user.agency_id) {
+          req.tenantFilter.agency_id = req.user.agency_id;
+        } else {
+          res.status(403).json({ 
+            error: 'Acente yöneticisi için acente atanmamış',
+            message: 'Lütfen sistem yöneticisi ile iletişime geçin'
+          });
+          return;
+        }
       }
-      req.tenantFilter.agency_id = req.user.agency_id;
       break;
 
     case UserRole.BRANCH_ADMIN:

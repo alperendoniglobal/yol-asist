@@ -59,8 +59,9 @@ export class SaleController {
 
   create = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     // Super Admin için agency_id ve branch_id null kalır = "Sistem" kaydı
-    const agency_id = req.user?.agency_id || null;
-    const branch_id = req.user?.branch_id || null;
+    // AGENCY_ADMIN için seçili broker'ı kullan (req.tenantFilter.agency_id)
+    const agency_id = req.tenantFilter?.agency_id || req.user?.agency_id || null;
+    const branch_id = req.tenantFilter?.branch_id || req.user?.branch_id || null;
 
     const saleData = {
       ...req.body,
@@ -81,14 +82,15 @@ export class SaleController {
     const { customer, vehicle, sale, payment } = req.body;
 
     // Kullanıcı bilgilerini ekle
+    // AGENCY_ADMIN için seçili broker'ı kullan (req.tenantFilter.agency_id)
     const completeSaleInput = {
       customer,
       vehicle,
       sale,
       payment,
       user_id: req.user?.id,
-      agency_id: req.user?.agency_id || null,
-      branch_id: req.user?.branch_id || null,
+      agency_id: req.tenantFilter?.agency_id || req.user?.agency_id || null,
+      branch_id: req.tenantFilter?.branch_id || req.user?.branch_id || null,
     };
 
     const result = await this.saleService.completeSale(completeSaleInput);
