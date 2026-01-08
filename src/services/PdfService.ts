@@ -104,11 +104,8 @@ export class PdfService {
       // Mavi gradient header bandı
       doc.rect(0, 0, 595, 100).fill(this.colors.primary);
       
-      // Acente bilgisini al (logo için)
+      // Acente bilgisi (logo kaldırıldı, sadece referans için)
       const agency = sale.agency;
-      
-      // Debug: Acente logosu kontrolü
-      console.log('Acente bilgisi:', agency ? { id: agency.id, name: agency.name, hasLogo: !!agency.logo, logoLength: agency.logo?.length } : 'Acente yok');
       
       // Sol üst köşe - 7/24 Çağrı Destek (Mavi arka plan üzerine beyaz yazı)
       doc.font(boldFont).fontSize(10).fillColor('#fff')
@@ -141,52 +138,11 @@ export class PdfService {
         doc.font(boldFont).fontSize(18).fillColor(this.colors.primary).text('ÇÖZÜM ASİSTAN', 45, 50);
         doc.font(defaultFont).fontSize(8).fillColor(this.colors.textLight).text('Yol Yardım Hizmetleri', 45, 70);
       }
-
-      // Orta - Acente logosu kutusu (eğer varsa)
-      if (agency) {
-        if (agency.logo) {
-          try {
-            // Base64 string'den buffer oluştur
-            let base64Data = agency.logo;
-            // data:image prefix'i varsa kaldır
-            if (base64Data.includes(',')) {
-              base64Data = base64Data.split(',')[1];
-            }
-            const logoBuffer = Buffer.from(base64Data, 'base64');
-            
-            // Acente logosu kutusu
-            doc.roundedRect(250, 35, 80, 60, 5).fill('#fff');
-            
-            // Base64 resmi PDF'e ekle
-            doc.image(logoBuffer, 260, 45, { 
-              width: 60, 
-              height: 45,
-              fit: [60, 45],
-              align: 'center',
-              valign: 'center'
-            });
-            
-            console.log('✅ Acente logosu PDF\'e eklendi');
-          } catch (e) {
-            console.error('❌ Acente logosu ekleme hatası:', e);
-            // Hata durumunda acente adını yaz
-            doc.roundedRect(250, 35, 80, 60, 5).fill('#fff');
-            doc.font(defaultFont).fontSize(8).fillColor(this.colors.text)
-               .text(agency.name || 'Acente', 255, 60, { width: 70, align: 'center' });
-          }
-        } else {
-          // Logo yoksa acente adını göster
-          console.log('⚠️ Acente logosu yok, acente adı gösteriliyor');
-          doc.roundedRect(250, 35, 80, 60, 5).fill('#fff');
-          doc.font(defaultFont).fontSize(8).fillColor(this.colors.text)
-             .text(agency.name || 'Acente', 255, 60, { width: 70, align: 'center' });
-        }
-      }
       
       // Sağ üst köşe - Satış bilgileri kutusu
-      // Acente logosu varsa daha sağa, yoksa normal pozisyonda
-      const salesInfoX = (agency && agency.logo) ? 340 : 350;
-      const salesInfoWidth = (agency && agency.logo) ? 215 : 205;
+      // Acente logosu kaldırıldı, normal pozisyonda
+      const salesInfoX = 350;
+      const salesInfoWidth = 205;
       const salesInfoHeight = 80; // Yüksekliği artırdık (4 satır için)
       
       doc.roundedRect(salesInfoX, 35, salesInfoWidth, salesInfoHeight, 5).fill('#fff');
