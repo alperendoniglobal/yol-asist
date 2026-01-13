@@ -39,4 +39,34 @@ export class StatsController {
     const stats = await this.statsService.getAgencyStats(req.tenantFilter);
     successResponse(res, stats, 'Agency stats retrieved successfully');
   });
+
+  /**
+   * SUPER_AGENCY_ADMIN için performans raporu endpoint'i
+   * Yönettiği agency'ler, branch'ler ve user'ların satış performanslarını döndürür
+   */
+  getSuperAgencyAdminPerformanceReport = asyncHandler(
+    async (req: Request, res: Response): Promise<void> => {
+      const report = await this.statsService.getSuperAgencyAdminPerformanceReport(req.user);
+      successResponse(res, report, 'Performance report retrieved successfully');
+    }
+  );
+
+  /**
+   * Seçilen broker için satış trendi ve detaylı istatistikler
+   * Query parametreleri: startDate, endDate (opsiyonel)
+   * Format: YYYY-MM-DD (örn: 2024-01-01)
+   */
+  getAgencySalesData = asyncHandler(
+    async (req: Request, res: Response): Promise<void> => {
+      const { agencyId } = req.params;
+      const { startDate, endDate } = req.query;
+      
+      const data = await this.statsService.getAgencySalesData(
+        agencyId,
+        startDate as string | undefined,
+        endDate as string | undefined
+      );
+      successResponse(res, data, 'Agency sales data retrieved successfully');
+    }
+  );
 }

@@ -3,13 +3,21 @@ import { Sale } from '../entities/Sale';
 import { Payment } from '../entities/Payment';
 import { Customer } from '../entities/Customer';
 import { Agency } from '../entities/Agency';
+import { Branch } from '../entities/Branch';
+import { User } from '../entities/User';
+import { UserAgency } from '../entities/UserAgency';
+import { IsNull } from 'typeorm';
 import { applyTenantFilter, applyAgencyFilter } from '../middlewares/tenantMiddleware';
+import { UserRole } from '../types/enums';
 
 export class StatsService {
   private saleRepository = AppDataSource.getRepository(Sale);
   private paymentRepository = AppDataSource.getRepository(Payment);
   private customerRepository = AppDataSource.getRepository(Customer);
   private agencyRepository = AppDataSource.getRepository(Agency);
+  private branchRepository = AppDataSource.getRepository(Branch);
+  private userRepository = AppDataSource.getRepository(User);
+  private userAgencyRepository = AppDataSource.getRepository(UserAgency);
 
   // Dashboard istatistikleri
   async getDashboard(filter?: any) {
@@ -381,5 +389,448 @@ export class StatsService {
       .getRawMany();
 
     return agencies;
+  }
+
+  /**
+   * Seçilen broker için satış trendi ve detaylı istatistikler
+   * @param agencyId - Broker ID
+   * @param startDate - Başlangıç tarihi (opsiyonel)
+   * @param endDate - Bitiş tarihi (opsiyonel)
+   * @returns Günlük, aylık satış trendi ve detaylı istatistikler
+   */
+  async getAgencySalesData(agencyId: string, startDate?: string, endDate?: string) {
+    // Tarih filtrelerini hazırla
+    let dateFilter: any = {};
+    let defaultStartDate: Date | null = null;
+    
+    if (startDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      dateFilter.startDate = start;
+    } else {
+      // Varsayılan: Son 30 gün
+      defaultStartDate = new Date();
+      defaultStartDate.setDate(defaultStartDate.getDate() - 30);
+      dateFilter.startDate = defaultStartDate;
+    }
+    
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      dateFilter.endDate = end;
+    }
+    
+    // Günlük satışlar
+    const dailySalesQb = this.saleRepository
+      .createQueryBuilder('sale')
+      .where('sale.agency_id = :agencyId', { agencyId });
+    
+    if (dateFilter.startDate) {
+      dailySalesQb.andWhere('sale.created_at >= :startDate', { startDate: dateFilter.startDate });
+    }
+    if (dateFilter.endDate) {
+      dailySalesQb.andWhere('sale.created_at <= :endDate', { endDate: dateFilter.endDate });
+    }
+    
+    const dailySales = await dailySalesQb
+      .select('DATE(sale.created_at)', 'date')
+      .addSelect('COUNT(sale.id)', 'count')
+      .addSelect('SUM(sale.price)', 'revenue')
+      .addSelect('SUM(sale.commission)', 'commission')
+      .groupBy('date')
+      .orderBy('date', 'ASC')
+      .getRawMany();
+
+    // Aylık satışlar
+    const monthlySalesQb = this.saleRepository
+      .createQueryBuilder('sale')
+      .where('sale.agency_id = :agencyId', { agencyId });
+    
+    if (dateFilter.startDate) {
+      monthlySalesQb.andWhere('sale.created_at >= :startDate', { startDate: dateFilter.startDate });
+    }
+    if (dateFilter.endDate) {
+      monthlySalesQb.andWhere('sale.created_at <= :endDate', { endDate: dateFilter.endDate });
+    }
+    
+    const monthlySales = await monthlySalesQb
+      .select('DATE_FORMAT(sale.created_at, "%Y-%m")', 'month')
+      .addSelect('COUNT(sale.id)', 'count')
+      .addSelect('SUM(sale.price)', 'revenue')
+      .addSelect('SUM(sale.commission)', 'commission')
+      .groupBy('month')
+      .orderBy('month', 'DESC')
+      .limit(12)
+      .getRawMany();
+
+    // Şube bazlı satışlar
+    const branchSalesQb = this.saleRepository
+      .createQueryBuilder('sale')
+      .leftJoin('sale.branch', 'branch')
+      .where('sale.agency_id = :agencyId', { agencyId });
+    
+    if (dateFilter.startDate) {
+      branchSalesQb.andWhere('sale.created_at >= :startDate', { startDate: dateFilter.startDate });
+    }
+    if (dateFilter.endDate) {
+      branchSalesQb.andWhere('sale.created_at <= :endDate', { endDate: dateFilter.endDate });
+    }
+    
+    const branchSales = await branchSalesQb
+      .select('branch.id', 'branchId')
+      .addSelect('branch.name', 'branchName')
+      .addSelect('COUNT(sale.id)', 'count')
+      .addSelect('SUM(sale.price)', 'revenue')
+      .addSelect('SUM(sale.commission)', 'commission')
+      .groupBy('branch.id')
+      .orderBy('revenue', 'DESC')
+      .getRawMany();
+
+    // Kullanıcı bazlı satışlar (tüm kullanıcılar)
+    const userSalesQb = this.saleRepository
+      .createQueryBuilder('sale')
+      .leftJoin('sale.user', 'user')
+      .where('sale.agency_id = :agencyId', { agencyId });
+    
+    if (dateFilter.startDate) {
+      userSalesQb.andWhere('sale.created_at >= :startDate', { startDate: dateFilter.startDate });
+    }
+    if (dateFilter.endDate) {
+      userSalesQb.andWhere('sale.created_at <= :endDate', { endDate: dateFilter.endDate });
+    }
+    
+    const userSales = await userSalesQb
+      .select('user.id', 'userId')
+      .addSelect('user.name', 'userName')
+      .addSelect('user.surname', 'userSurname')
+      .addSelect('user.email', 'userEmail')
+      .addSelect('user.role', 'userRole')
+      .addSelect('COUNT(sale.id)', 'count')
+      .addSelect('SUM(sale.price)', 'revenue')
+      .addSelect('SUM(sale.commission)', 'commission')
+      .groupBy('user.id')
+      .orderBy('revenue', 'DESC')
+      .getRawMany();
+
+    // Paket bazlı satışlar
+    const packageSalesQb = this.saleRepository
+      .createQueryBuilder('sale')
+      .leftJoin('sale.package', 'package')
+      .where('sale.agency_id = :agencyId', { agencyId });
+    
+    if (dateFilter.startDate) {
+      packageSalesQb.andWhere('sale.created_at >= :startDate', { startDate: dateFilter.startDate });
+    }
+    if (dateFilter.endDate) {
+      packageSalesQb.andWhere('sale.created_at <= :endDate', { endDate: dateFilter.endDate });
+    }
+    
+    const packageSales = await packageSalesQb
+      .select('package.id', 'packageId')
+      .addSelect('package.name', 'packageName')
+      .addSelect('package.vehicle_type', 'vehicleType')
+      .addSelect('COUNT(sale.id)', 'count')
+      .addSelect('SUM(sale.price)', 'revenue')
+      .addSelect('SUM(sale.commission)', 'commission')
+      .groupBy('package.id')
+      .orderBy('count', 'DESC')
+      .getRawMany();
+
+    // Kullanıcı ve paket kombinasyonu (kim hangi paketi satmış)
+    const userPackageSalesQb = this.saleRepository
+      .createQueryBuilder('sale')
+      .leftJoin('sale.user', 'user')
+      .leftJoin('sale.package', 'package')
+      .where('sale.agency_id = :agencyId', { agencyId });
+    
+    if (dateFilter.startDate) {
+      userPackageSalesQb.andWhere('sale.created_at >= :startDate', { startDate: dateFilter.startDate });
+    }
+    if (dateFilter.endDate) {
+      userPackageSalesQb.andWhere('sale.created_at <= :endDate', { endDate: dateFilter.endDate });
+    }
+    
+    const userPackageSales = await userPackageSalesQb
+      .select('user.id', 'userId')
+      .addSelect('user.name', 'userName')
+      .addSelect('user.surname', 'userSurname')
+      .addSelect('package.id', 'packageId')
+      .addSelect('package.name', 'packageName')
+      .addSelect('COUNT(sale.id)', 'count')
+      .addSelect('SUM(sale.price)', 'revenue')
+      .addSelect('SUM(sale.commission)', 'commission')
+      .groupBy('user.id')
+      .addGroupBy('package.id')
+      .orderBy('count', 'DESC')
+      .getRawMany();
+
+    return {
+      dailySales: dailySales.map(item => ({
+        date: item.date,
+        count: parseInt(item.count) || 0,
+        revenue: parseFloat(item.revenue) || 0,
+        commission: parseFloat(item.commission) || 0
+      })),
+      monthlySales: monthlySales.map(item => ({
+        month: item.month,
+        count: parseInt(item.count) || 0,
+        revenue: parseFloat(item.revenue) || 0,
+        commission: parseFloat(item.commission) || 0
+      })),
+      branchSales: branchSales.map(item => ({
+        branchId: item.branchId,
+        branchName: item.branchName || 'Merkez',
+        count: parseInt(item.count) || 0,
+        revenue: parseFloat(item.revenue) || 0,
+        commission: parseFloat(item.commission) || 0
+      })),
+      userSales: userSales.map(item => ({
+        userId: item.userId,
+        userName: `${item.userName} ${item.userSurname || ''}`.trim(),
+        userEmail: item.userEmail,
+        userRole: item.userRole,
+        count: parseInt(item.count) || 0,
+        revenue: parseFloat(item.revenue) || 0,
+        commission: parseFloat(item.commission) || 0
+      })),
+      packageSales: packageSales.map(item => ({
+        packageId: item.packageId,
+        packageName: item.packageName,
+        vehicleType: item.vehicleType,
+        count: parseInt(item.count) || 0,
+        revenue: parseFloat(item.revenue) || 0,
+        commission: parseFloat(item.commission) || 0
+      })),
+      userPackageSales: userPackageSales.map(item => ({
+        userId: item.userId,
+        userName: `${item.userName} ${item.userSurname || ''}`.trim(),
+        packageId: item.packageId,
+        packageName: item.packageName,
+        count: parseInt(item.count) || 0,
+        revenue: parseFloat(item.revenue) || 0,
+        commission: parseFloat(item.commission) || 0
+      }))
+    };
+  }
+
+  /**
+   * SUPER_ADMIN ve SUPER_AGENCY_ADMIN için performans raporu
+   * SUPER_ADMIN: Tüm agency'leri gösterir
+   * SUPER_AGENCY_ADMIN: Yönettiği agency'leri gösterir
+   * 
+   * @param currentUser - Mevcut kullanıcı (SUPER_ADMIN veya SUPER_AGENCY_ADMIN olmalı)
+   * @returns Agency, branch ve user bazlı performans raporu
+   */
+  async getSuperAgencyAdminPerformanceReport(currentUser: any) {
+    let agencies: Agency[] = [];
+    
+    // SUPER_ADMIN ise tüm agency'leri getir
+    if (currentUser.role === UserRole.SUPER_ADMIN) {
+      agencies = await this.agencyRepository
+        .createQueryBuilder('agency')
+        .orderBy('agency.name', 'ASC')
+        .getMany();
+    } else {
+      // SUPER_AGENCY_ADMIN ise sadece yönettiği agency'leri getir
+      const userAgencies = await this.userAgencyRepository.find({
+        where: { user_id: currentUser.id },
+        relations: ['agency'],
+      });
+
+      if (userAgencies.length === 0) {
+        return {
+          agencies: [],
+          summary: {
+            totalAgencies: 0,
+            totalBranches: 0,
+            totalUsers: 0,
+            totalSales: 0,
+            totalRevenue: 0,
+            totalCommission: 0,
+          },
+        };
+      }
+
+      const managedAgencyIds = userAgencies.map(ua => ua.agency_id);
+
+      // Agency'leri detaylı olarak getir
+      agencies = await this.agencyRepository
+        .createQueryBuilder('agency')
+        .where('agency.id IN (:...agencyIds)', { agencyIds: managedAgencyIds })
+        .orderBy('agency.name', 'ASC')
+        .getMany();
+    }
+
+    // Her agency için branch'leri ve user'ları getir
+    const result = await Promise.all(
+      agencies.map(async (agency) => {
+        // Agency'nin branch'lerini getir
+        const branches = await this.branchRepository.find({
+          where: { agency_id: agency.id },
+          order: { name: 'ASC' },
+        });
+
+        // Agency'nin toplam satış istatistikleri
+        const agencySalesStats = await this.saleRepository
+          .createQueryBuilder('sale')
+          .where('sale.agency_id = :agencyId', { agencyId: agency.id })
+          .select([
+            'COUNT(sale.id) as total_sales',
+            'SUM(sale.price) as total_revenue',
+            'SUM(sale.commission) as total_commission',
+          ])
+          .getRawOne();
+
+        // Her branch için detaylı bilgiler
+        const branchesWithDetails = await Promise.all(
+          branches.map(async (branch) => {
+            // Branch'in user'larını getir (silinmemiş ve aktif olanlar)
+            const users = await this.userRepository.find({
+              where: {
+                branch_id: branch.id,
+                is_deleted: false,
+              },
+              order: { name: 'ASC' },
+            });
+
+            // Branch'in toplam satış istatistikleri
+            const branchSalesStats = await this.saleRepository
+              .createQueryBuilder('sale')
+              .where('sale.branch_id = :branchId', { branchId: branch.id })
+              .select([
+                'COUNT(sale.id) as total_sales',
+                'SUM(sale.price) as total_revenue',
+                'SUM(sale.commission) as total_commission',
+              ])
+              .getRawOne();
+
+            // Her user için satış performansı
+            const usersWithPerformance = await Promise.all(
+              users.map(async (user) => {
+                const userSalesStats = await this.saleRepository
+                  .createQueryBuilder('sale')
+                  .where('sale.user_id = :userId', { userId: user.id })
+                  .select([
+                    'COUNT(sale.id) as total_sales',
+                    'SUM(sale.price) as total_revenue',
+                    'SUM(sale.commission) as total_commission',
+                  ])
+                  .getRawOne();
+
+                return {
+                  id: user.id,
+                  name: user.name,
+                  surname: user.surname,
+                  email: user.email,
+                  phone: user.phone,
+                  role: user.role,
+                  status: user.status,
+                  performance: {
+                    totalSales: parseInt(userSalesStats?.total_sales || '0'),
+                    totalRevenue: parseFloat(userSalesStats?.total_revenue || '0'),
+                    totalCommission: parseFloat(userSalesStats?.total_commission || '0'),
+                  },
+                };
+              })
+            );
+
+            return {
+              id: branch.id,
+              name: branch.name,
+              address: branch.address,
+              phone: branch.phone,
+              status: branch.status,
+              commission_rate: parseFloat(branch.commission_rate.toString()),
+              balance: parseFloat(branch.balance.toString()),
+              performance: {
+                totalSales: parseInt(branchSalesStats?.total_sales || '0'),
+                totalRevenue: parseFloat(branchSalesStats?.total_revenue || '0'),
+                totalCommission: parseFloat(branchSalesStats?.total_commission || '0'),
+              },
+              users: usersWithPerformance,
+            };
+          })
+        );
+
+        // Agency'ye bağlı ama branch'i olmayan user'ları da getir (merkez çalışanları)
+        const agencyUsersWithoutBranch = await this.userRepository.find({
+          where: {
+            agency_id: agency.id,
+            branch_id: IsNull(),
+            is_deleted: false,
+          },
+          order: { name: 'ASC' },
+        });
+
+        const agencyUsersWithPerformance = await Promise.all(
+          agencyUsersWithoutBranch.map(async (user) => {
+            const userSalesStats = await this.saleRepository
+              .createQueryBuilder('sale')
+              .where('sale.user_id = :userId', { userId: user.id })
+              .select([
+                'COUNT(sale.id) as total_sales',
+                'SUM(sale.price) as total_revenue',
+                'SUM(sale.commission) as total_commission',
+              ])
+              .getRawOne();
+
+            return {
+              id: user.id,
+              name: user.name,
+              surname: user.surname,
+              email: user.email,
+              phone: user.phone,
+              role: user.role,
+              status: user.status,
+              performance: {
+                totalSales: parseInt(userSalesStats?.total_sales || '0'),
+                totalRevenue: parseFloat(userSalesStats?.total_revenue || '0'),
+                totalCommission: parseFloat(userSalesStats?.total_commission || '0'),
+              },
+            };
+          })
+        );
+
+        return {
+          id: agency.id,
+          name: agency.name,
+          tax_number: agency.tax_number,
+          address: agency.address,
+          phone: agency.phone,
+          email: agency.email,
+          status: agency.status,
+          commission_rate: parseFloat(agency.commission_rate.toString()),
+          balance: parseFloat(agency.balance.toString()),
+          performance: {
+            totalSales: parseInt(agencySalesStats?.total_sales || '0'),
+            totalRevenue: parseFloat(agencySalesStats?.total_revenue || '0'),
+            totalCommission: parseFloat(agencySalesStats?.total_commission || '0'),
+          },
+          branches: branchesWithDetails,
+          agencyUsers: agencyUsersWithPerformance, // Branch'i olmayan merkez çalışanları
+        };
+      })
+    );
+
+    // Toplam özet istatistikleri hesapla
+    const summary = {
+      totalAgencies: result.length,
+      totalBranches: result.reduce((sum, agency) => sum + agency.branches.length, 0),
+      totalUsers: result.reduce(
+        (sum, agency) =>
+          sum +
+          agency.branches.reduce((branchSum, branch) => branchSum + branch.users.length, 0) +
+          agency.agencyUsers.length,
+        0
+      ),
+      totalSales: result.reduce((sum, agency) => sum + agency.performance.totalSales, 0),
+      totalRevenue: result.reduce((sum, agency) => sum + agency.performance.totalRevenue, 0),
+      totalCommission: result.reduce((sum, agency) => sum + agency.performance.totalCommission, 0),
+    };
+
+    return {
+      agencies: result,
+      summary,
+    };
   }
 }

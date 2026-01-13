@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { StatsController } from '../controllers/StatsController';
 import { authMiddleware, tenantMiddleware } from '../middlewares';
+import { superAdminOrSuperAgencyAdmin } from '../middlewares/roleMiddleware';
 
 const router = Router();
 const statsController = new StatsController();
@@ -15,5 +16,19 @@ router.get('/sales', statsController.getSalesStats);
 router.get('/revenue', statsController.getRevenueStats);
 router.get('/customers', statsController.getCustomerStats);
 router.get('/agencies', statsController.getAgencyStats);
+
+// SUPER_AGENCY_ADMIN performans raporu (SUPER_ADMIN ve SUPER_AGENCY_ADMIN erişebilir)
+router.get(
+  '/super-agency-admin/performance',
+  superAdminOrSuperAgencyAdmin,
+  statsController.getSuperAgencyAdminPerformanceReport
+);
+
+// Seçilen broker için satış trendi (SUPER_ADMIN ve SUPER_AGENCY_ADMIN erişebilir)
+router.get(
+  '/agency/:agencyId/sales',
+  superAdminOrSuperAgencyAdmin,
+  statsController.getAgencySalesData
+);
 
 export default router;

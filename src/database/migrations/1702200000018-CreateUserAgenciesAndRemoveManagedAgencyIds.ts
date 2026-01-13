@@ -45,16 +45,6 @@ export class CreateUserAgenciesAndRemoveManagedAgencyIds1702200000018 implements
         true
       );
 
-      // Unique index: Aynı kullanıcı-agenet kombinasyonu tekrar edemez
-      await queryRunner.createIndex(
-        'user_agencies',
-        new TableIndex({
-          name: 'IDX_user_agencies_user_agency',
-          columnNames: ['user_id', 'agency_id'],
-          isUnique: true,
-        })
-      );
-
       // Foreign key: user_id -> users.id
       await queryRunner.createForeignKey(
         'user_agencies',
@@ -82,6 +72,48 @@ export class CreateUserAgenciesAndRemoveManagedAgencyIds1702200000018 implements
       console.log('✅ user_agencies junction table oluşturuldu');
     } else {
       console.log('⚠️ user_agencies tablosu zaten mevcut, atlandı');
+      
+      // Tablo mevcut ama unique index yoksa, önce boş/geçersiz kayıtları temizle
+      // Boş string veya NULL değerleri olan kayıtları sil
+      await queryRunner.query(`
+        DELETE FROM user_agencies 
+        WHERE user_id = '' OR user_id IS NULL 
+           OR agency_id = '' OR agency_id IS NULL
+      `);
+      console.log('✅ Boş/geçersiz user_agencies kayıtları temizlendi');
+      
+      // Duplicate kayıtları temizle (her user_id + agency_id kombinasyonundan sadece birini tut)
+      await queryRunner.query(`
+        DELETE ua1 FROM user_agencies ua1
+        INNER JOIN user_agencies ua2 
+        WHERE ua1.id > ua2.id 
+          AND ua1.user_id = ua2.user_id 
+          AND ua1.agency_id = ua2.agency_id
+      `);
+      console.log('✅ Duplicate user_agencies kayıtları temizlendi');
+    }
+    
+    // Unique index'i kontrol et ve yoksa oluştur
+    const existingIndex = await queryRunner.query(`
+      SELECT COUNT(*) as count
+      FROM information_schema.statistics
+      WHERE table_schema = DATABASE()
+        AND table_name = 'user_agencies'
+        AND index_name = 'IDX_user_agencies_user_agency'
+    `);
+    
+    if (existingIndex[0].count === 0) {
+      await queryRunner.createIndex(
+        'user_agencies',
+        new TableIndex({
+          name: 'IDX_user_agencies_user_agency',
+          columnNames: ['user_id', 'agency_id'],
+          isUnique: true,
+        })
+      );
+      console.log('✅ Unique index oluşturuldu');
+    } else {
+      console.log('⚠️ Unique index zaten mevcut, atlandı');
     }
 
     // 2. Mevcut managed_agency_ids verilerini user_agencies tablosuna taşı
