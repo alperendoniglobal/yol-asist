@@ -65,10 +65,12 @@ export class ContractService {
       );
 
       // Tüm acentelerin sözleşme kabulünü sıfırla (yeniden onay gerekli)
-      await this.agencyRepository.update(
-        {},
-        { contract_accepted: false }
-      );
+      // Boş criteria kullanılamaz, bu yüzden createQueryBuilder kullanıyoruz
+      await this.agencyRepository
+        .createQueryBuilder()
+        .update()
+        .set({ contract_accepted: false })
+        .execute();
     }
 
     // Yeni versiyonu oluştur
@@ -110,10 +112,12 @@ export class ContractService {
       );
 
       // Tüm acentelerin sözleşme kabulünü sıfırla
-      await this.agencyRepository.update(
-        {},
-        { contract_accepted: false }
-      );
+      // Boş criteria kullanılamaz, bu yüzden createQueryBuilder kullanıyoruz
+      await this.agencyRepository
+        .createQueryBuilder()
+        .update()
+        .set({ contract_accepted: false })
+        .execute();
     }
 
     // Versiyonu güncelle
@@ -145,10 +149,12 @@ export class ContractService {
     await this.contractVersionRepository.save(version);
 
     // Tüm acentelerin sözleşme kabulünü sıfırla
-    await this.agencyRepository.update(
-      {},
-      { contract_accepted: false }
-    );
+    // Boş criteria kullanılamaz, bu yüzden createQueryBuilder kullanıyoruz
+    await this.agencyRepository
+      .createQueryBuilder()
+      .update()
+      .set({ contract_accepted: false })
+      .execute();
 
     return version;
   }

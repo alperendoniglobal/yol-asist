@@ -39,8 +39,9 @@ if (config.nodeEnv === 'development') {
   );
 }
 
-// API Routes
+// API Routes - Hem /api hem de /api/v1 destekleniyor (geriye dönük uyumluluk için)
 app.use('/api/v1', routes);
+app.use('/api', routes);
 
 // Root endpoint
 app.get('/', (req, res) => {
