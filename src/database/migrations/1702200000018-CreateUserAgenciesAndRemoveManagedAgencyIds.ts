@@ -20,8 +20,8 @@ export class CreateUserAgenciesAndRemoveManagedAgencyIds1702200000018 implements
               type: 'varchar',
               length: '36',
               isPrimary: true,
-              generationStrategy: 'uuid',
-              default: '(UUID())',
+              // UUID generationStrategy TypeORM tarafından application level'da handle edilir
+              // MySQL'de default value olarak UUID() kullanılamaz, bu yüzden default kaldırıldı
             },
             {
               name: 'user_id',

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { StatsController } from '../controllers/StatsController';
 import { authMiddleware, tenantMiddleware } from '../middlewares';
-import { superAdminOrSuperAgencyAdmin } from '../middlewares/roleMiddleware';
+import { superAdminOrSuperAgencyAdmin, superAdminOnly } from '../middlewares/roleMiddleware';
 
 const router = Router();
 const statsController = new StatsController();
@@ -29,6 +29,13 @@ router.get(
   '/agency/:agencyId/sales',
   superAdminOrSuperAgencyAdmin,
   statsController.getAgencySalesData
+);
+
+// Satış Dağılım Raporu - SADECE SUPER_ADMIN erişebilir
+router.get(
+  '/sales-distribution',
+  superAdminOnly,
+  statsController.getSalesDistributionReport
 );
 
 export default router;

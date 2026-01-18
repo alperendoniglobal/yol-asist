@@ -6,6 +6,10 @@ import { Agency } from '../entities/Agency';
 import { Branch } from '../entities/Branch';
 import { User } from '../entities/User';
 import { UserAgency } from '../entities/UserAgency';
+import { CarBrand } from '../entities/CarBrand';
+import { CarModel } from '../entities/CarModel';
+import { MotorBrand } from '../entities/MotorBrand';
+import { MotorModel } from '../entities/MotorModel';
 import { IsNull } from 'typeorm';
 import { applyTenantFilter, applyAgencyFilter } from '../middlewares/tenantMiddleware';
 import { UserRole } from '../types/enums';
@@ -831,6 +835,209 @@ export class StatsService {
     return {
       agencies: result,
       summary,
+    };
+  }
+
+  /**
+   * Satış Dağılım Raporu - SUPER_ADMIN için
+   * En çok satılan marka, model, model yılı ve şehir bazlı dağılım
+   */
+  async getSalesDistributionReport() {
+    // Önce toplam satış sayısını kontrol et (debug için)
+    const totalSales = await this.saleRepository.count();
+    
+    // Vehicle_id olan satışları kontrol et (direkt SQL ile)
+    const salesWithVehicleId = await this.saleRepository
+      .createQueryBuilder('sale')
+      .where('sale.vehicle_id IS NOT NULL')
+      .getCount();
+    
+    // Vehicle relation'ı olan satışları kontrol et
+    const salesWithVehicle = await this.saleRepository
+      .createQueryBuilder('sale')
+      .innerJoin('sale.vehicle', 'vehicle')
+      .getCount();
+    
+    // Debug: İlk birkaç satışı logla
+    const sampleSales = await this.saleRepository
+      .createQueryBuilder('sale')
+      .select(['sale.id', 'sale.vehicle_id'])
+      .limit(5)
+      .getMany();
+    
+    console.log('🔍 Debug - Sample Sales:', sampleSales.map(s => ({ id: s.id, vehicle_id: s.vehicle_id })));
+
+    // 1. En çok satılan otomobil markaları
+    // vehicles tablosu ile direkt join yap (relation yerine)
+    const topCarBrands = await this.saleRepository
+      .createQueryBuilder('sale')
+      .innerJoin('vehicles', 'vehicle', 'sale.vehicle_id = vehicle.id')
+      .innerJoin('cars_brands', 'brand', 'vehicle.brand_id = brand.id')
+      .select('brand.id', 'brandId')
+      .addSelect('brand.name', 'brandName')
+      .addSelect('COUNT(sale.id)', 'saleCount')
+      .where('vehicle.brand_id IS NOT NULL')
+      .groupBy('brand.id')
+      .addGroupBy('brand.name')
+      .orderBy('saleCount', 'DESC')
+      .limit(10)
+      .getRawMany();
+
+    // 2. En çok satılan otomobil modelleri
+    const topCarModels = await this.saleRepository
+      .createQueryBuilder('sale')
+      .innerJoin('vehicles', 'vehicle', 'sale.vehicle_id = vehicle.id')
+      .innerJoin('cars_models', 'model', 'vehicle.model_id = model.id')
+      .innerJoin('cars_brands', 'brand', 'model.brand_id = brand.id')
+      .select('model.id', 'modelId')
+      .addSelect('model.name', 'modelName')
+      .addSelect('brand.name', 'brandName')
+      .addSelect('COUNT(sale.id)', 'saleCount')
+      .where('vehicle.model_id IS NOT NULL')
+      .groupBy('model.id')
+      .addGroupBy('model.name')
+      .addGroupBy('brand.name')
+      .orderBy('saleCount', 'DESC')
+      .limit(10)
+      .getRawMany();
+
+    // 3. En çok satılan motosiklet markaları
+    const topMotorBrands = await this.saleRepository
+      .createQueryBuilder('sale')
+      .innerJoin('vehicles', 'vehicle', 'sale.vehicle_id = vehicle.id')
+      .innerJoin('motor_brands', 'motorBrand', 'vehicle.motor_brand_id = motorBrand.id')
+      .select('motorBrand.id', 'brandId')
+      .addSelect('motorBrand.name', 'brandName')
+      .addSelect('COUNT(sale.id)', 'saleCount')
+      .where('vehicle.motor_brand_id IS NOT NULL')
+      .groupBy('motorBrand.id')
+      .addGroupBy('motorBrand.name')
+      .orderBy('saleCount', 'DESC')
+      .limit(10)
+      .getRawMany();
+
+    // 4. En çok satılan motosiklet modelleri
+    const topMotorModels = await this.saleRepository
+      .createQueryBuilder('sale')
+      .innerJoin('vehicles', 'vehicle', 'sale.vehicle_id = vehicle.id')
+      .innerJoin('motor_models', 'motorModel', 'vehicle.motor_model_id = motorModel.id')
+      .innerJoin('motor_brands', 'motorBrand', 'motorModel.brand_id = motorBrand.id')
+      .select('motorModel.id', 'modelId')
+      .addSelect('motorModel.name', 'modelName')
+      .addSelect('motorBrand.name', 'brandName')
+      .addSelect('COUNT(sale.id)', 'saleCount')
+      .where('vehicle.motor_model_id IS NOT NULL')
+      .groupBy('motorModel.id')
+      .addGroupBy('motorModel.name')
+      .addGroupBy('motorBrand.name')
+      .orderBy('saleCount', 'DESC')
+      .limit(10)
+      .getRawMany();
+
+    // 5. En çok satılan model yılları (araç yaşı hesaplanır: 2024 - model_year)
+    const currentYear = new Date().getFullYear();
+    const topModelYears = await this.saleRepository
+      .createQueryBuilder('sale')
+      .innerJoin('vehicles', 'vehicle', 'sale.vehicle_id = vehicle.id')
+      .select('vehicle.model_year', 'modelYear')
+      .addSelect(`(${currentYear} - vehicle.model_year)`, 'vehicleAge')
+      .addSelect('COUNT(sale.id)', 'saleCount')
+      .where('vehicle.model_year IS NOT NULL')
+      .groupBy('vehicle.model_year')
+      .orderBy('saleCount', 'DESC')
+      .limit(20)
+      .getRawMany();
+
+    // 6. Şehir bazlı müşteri ve satış dağılımı
+    // Hem Customer hem de UserCustomer'dan şehir bilgilerini al
+    // Direkt tablo join'leri kullan
+    const cityDistribution = await this.saleRepository
+      .createQueryBuilder('sale')
+      .leftJoin('customers', 'customer', 'sale.customer_id = customer.id')
+      .leftJoin('user_customers', 'userCustomer', 'sale.user_customer_id = userCustomer.id')
+      .select(
+        `COALESCE(NULLIF(customer.city, ''), NULLIF(userCustomer.city, ''), 'Belirtilmemiş')`,
+        'city'
+      )
+      .addSelect('COUNT(sale.id)', 'saleCount')
+      .addSelect('COUNT(DISTINCT COALESCE(customer.id, userCustomer.id))', 'customerCount')
+      .addSelect('COALESCE(SUM(sale.price), 0)', 'totalRevenue')
+      .groupBy('city')
+      .orderBy('saleCount', 'DESC')
+      .getRawMany();
+
+    // Şehir isimlerini plaka numaralarına çevir (Türkiye haritası için)
+    // Türkiye'deki şehirlerin plaka numaraları mapping'i
+    const cityPlateMapping: Record<string, number> = {
+      'Adana': 1, 'Adıyaman': 2, 'Afyonkarahisar': 3, 'Ağrı': 4, 'Amasya': 5,
+      'Ankara': 6, 'Antalya': 7, 'Artvin': 8, 'Aydın': 9, 'Balıkesir': 10,
+      'Bilecik': 11, 'Bingöl': 12, 'Bitlis': 13, 'Bolu': 14, 'Burdur': 15,
+      'Bursa': 16, 'Çanakkale': 17, 'Çankırı': 18, 'Çorum': 19, 'Denizli': 20,
+      'Diyarbakır': 21, 'Edirne': 22, 'Elazığ': 23, 'Erzincan': 24, 'Erzurum': 25,
+      'Eskişehir': 26, 'Gaziantep': 27, 'Giresun': 28, 'Gümüşhane': 29, 'Hakkari': 30,
+      'Hatay': 31, 'Isparta': 32, 'Mersin': 33, 'İstanbul': 34, 'İzmir': 35,
+      'Kars': 36, 'Kastamonu': 37, 'Kayseri': 38, 'Kırklareli': 39, 'Kırşehir': 40,
+      'Kocaeli': 41, 'Konya': 42, 'Kütahya': 43, 'Malatya': 44, 'Manisa': 45,
+      'Kahramanmaraş': 46, 'Mardin': 47, 'Muğla': 48, 'Muş': 49, 'Nevşehir': 50,
+      'Niğde': 51, 'Ordu': 52, 'Rize': 53, 'Sakarya': 54, 'Samsun': 55,
+      'Siirt': 56, 'Sinop': 57, 'Sivas': 58, 'Tekirdağ': 59, 'Tokat': 60,
+      'Trabzon': 61, 'Tunceli': 62, 'Şanlıurfa': 63, 'Uşak': 64, 'Van': 65,
+      'Yozgat': 66, 'Zonguldak': 67, 'Aksaray': 68, 'Bayburt': 69, 'Karaman': 70,
+      'Kırıkkale': 71, 'Batman': 72, 'Şırnak': 73, 'Bartın': 74, 'Ardahan': 75,
+      'Iğdır': 76, 'Yalova': 77, 'Karabük': 78, 'Kilis': 79, 'Osmaniye': 80,
+      'Düzce': 81
+    };
+
+    // Şehir dağılımını plaka numaralarıyla eşleştir
+    const cityDistributionWithPlate = cityDistribution.map(item => ({
+      city: item.city,
+      plateNumber: cityPlateMapping[item.city] || null,
+      saleCount: parseInt(item.saleCount || '0'),
+      customerCount: parseInt(item.customerCount || '0'),
+      totalRevenue: parseFloat(item.totalRevenue || '0'),
+    }));
+
+    // Debug bilgisi (production'da kaldırılabilir)
+    console.log('📊 Satış Dağılım Raporu Debug:', {
+      totalSales,
+      salesWithVehicleId,
+      salesWithVehicle,
+      topCarBrandsCount: topCarBrands.length,
+      topCarModelsCount: topCarModels.length,
+      topModelYearsCount: topModelYears.length,
+      cityDistributionCount: cityDistribution.length,
+      cityDistributionSample: cityDistribution.slice(0, 3),
+    });
+
+    return {
+      topCarBrands: topCarBrands.map(item => ({
+        brandId: parseInt(item.brandId),
+        brandName: item.brandName,
+        saleCount: parseInt(item.saleCount),
+      })),
+      topCarModels: topCarModels.map(item => ({
+        modelId: parseInt(item.modelId),
+        modelName: item.modelName,
+        brandName: item.brandName,
+        saleCount: parseInt(item.saleCount),
+      })),
+      topMotorBrands: topMotorBrands.map(item => ({
+        brandId: parseInt(item.brandId),
+        brandName: item.brandName,
+        saleCount: parseInt(item.saleCount),
+      })),
+      topMotorModels: topMotorModels.map(item => ({
+        modelId: parseInt(item.modelId),
+        modelName: item.modelName,
+        brandName: item.brandName,
+        saleCount: parseInt(item.saleCount),
+      })),
+      topModelYears: topModelYears.map(item => ({
+        modelYear: parseInt(item.modelYear),
+        vehicleAge: parseInt(item.vehicleAge),
+        saleCount: parseInt(item.saleCount),
+      })),
+      cityDistribution: cityDistributionWithPlate,
     };
   }
 }

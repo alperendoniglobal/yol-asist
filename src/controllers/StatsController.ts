@@ -69,4 +69,15 @@ export class StatsController {
       successResponse(res, data, 'Agency sales data retrieved successfully');
     }
   );
+
+  /**
+   * Satış Dağılım Raporu - SUPER_ADMIN için
+   * En çok satılan marka, model, model yılı ve şehir bazlı dağılım
+   */
+  getSalesDistributionReport = asyncHandler(
+    async (req: Request, res: Response): Promise<void> => {
+      const report = await this.statsService.getSalesDistributionReport();
+      successResponse(res, report, 'Sales distribution report retrieved successfully');
+    }
+  );
 }
