@@ -45,6 +45,7 @@
     "mysql2": "^3.9.1",
     "pdfkit": "^0.17.2",
     "reflect-metadata": "^0.2.1",
+    "socket.io": "^4.8.3",
     "svg-to-pdfkit": "^0.1.8",
     "typeorm": "^0.3.20",
     "winston": "^3.11.0"

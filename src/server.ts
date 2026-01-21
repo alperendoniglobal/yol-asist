@@ -3,6 +3,7 @@ import app from './app';
 import { AppDataSource } from './config/database';
 import { config } from './config';
 import logger from './utils/logger';
+import { initializeSocketServer } from './socket/socketServer';
 
 // Refund kolonları eklendi - 10.12.2025
 
@@ -12,12 +13,16 @@ const startServer = async () => {
     await AppDataSource.initialize();
     logger.info('Database connection established successfully');
 
-    // Start server
+    // Start HTTP server
     const server = app.listen(config.port, () => {
       logger.info(`Server is running on port ${config.port}`);
       logger.info(`Environment: ${config.nodeEnv}`);
       logger.info(`API URL: http://localhost:${config.port}/api/v1`);
     });
+
+    // Initialize Socket.io server
+    initializeSocketServer(server);
+    logger.info('Socket.io server initialized and ready for connections');
 
     // Graceful shutdown
     const gracefulShutdown = async (signal: string) => {
