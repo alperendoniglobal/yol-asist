@@ -95,8 +95,9 @@ export class SaleService {
     return `${year}${month}${day}-${hours}${minutes}${seconds}-${random}`;
   }
 
-  // Satışları listele (tenant filter ile)
-  async getAll(filter?: any, search?: string, userRole?: string) {
+  // Satışları listele (tenant filter + opsiyonel ödeme türü filtresi ile)
+  // paymentType: BALANCE veya PAYTR verilirse sadece o ödeme türündeki satışlar döner
+  async getAll(filter?: any, search?: string, userRole?: string, paymentType?: string) {
     const queryBuilder = this.saleRepository
       .createQueryBuilder('sale')
       .leftJoinAndSelect('sale.customer', 'customer')
@@ -109,12 +110,21 @@ export class SaleService {
       .leftJoinAndSelect('sale.agency', 'agency')
       .leftJoinAndSelect('sale.branch', 'branch')
       .leftJoinAndSelect('sale.user', 'user')
+      .leftJoinAndSelect('sale.payments', 'payments')
       .orderBy('sale.created_at', 'DESC');
 
     // Tenant filter uygula
     if (filter) {
       // Sale entity'sinde 'created_by' yerine 'user_id' kolonu var
       applyTenantFilter(queryBuilder, filter, 'sale', 'user_id');
+    }
+
+    // Ödeme türüne göre filtrele (Bakiye / PayTR)
+    if (paymentType && (paymentType === PaymentType.BALANCE || paymentType === PaymentType.PAYTR)) {
+      queryBuilder.andWhere(
+        'EXISTS (SELECT 1 FROM payments p WHERE p.sale_id = sale.id AND p.type = :paymentType)',
+        { paymentType }
+      );
     }
 
     // Search query uygula
@@ -621,37 +631,45 @@ export class SaleService {
         vehicle = await queryRunner.manager.save(newVehicle);
       }
 
-      // Komisyon hesaplamaları (PayTR için de gerekli)
+      // Komisyon hesaplamaları
+      // Bakiye ile ödemede komisyon KESİLMEZ: satış kaydedilir, commission/branch_commission/agency_commission 0 olur,
+      // bakiyeye komisyon eklenmez (sadece satış tutarı bakiyeden düşülür).
       let branchCommission: number | null = null;
       let agencyCommission: number | null = null;
       let totalCommission: number = 0;
 
-      if (input.sale.commission === undefined) {
+      if (input.payment.type === PaymentType.BALANCE) {
+        // Bakiye ile ödemede komisyon kesilmez – hepsi 0
+        branchCommission = null;
+        agencyCommission = null;
+        totalCommission = 0;
+      } else if (input.branch_id) {
+        // Şube satışında her zaman backend’de dağılımlı komisyon hesaplanır:
+        // Şube kendi oranını (branch_commission), acente kendi payını (agency_commission) alır.
+        // Frontend’den gelen commission kullanılmaz.
         const distributedCommission = await this.calculateDistributedCommission(
           Number(input.sale.price),
-          input.branch_id || null,
+          input.branch_id,
+          input.agency_id || null
+        );
+        branchCommission = distributedCommission.branch_commission;
+        agencyCommission = distributedCommission.agency_commission;
+        totalCommission = distributedCommission.total_commission;
+      } else if (input.sale.commission === undefined) {
+        // Acente satışı (şube yok), komisyon hesaplanmamışsa hesapla
+        const distributedCommission = await this.calculateDistributedCommission(
+          Number(input.sale.price),
+          null,
           input.agency_id || null
         );
         branchCommission = distributedCommission.branch_commission;
         agencyCommission = distributedCommission.agency_commission;
         totalCommission = distributedCommission.total_commission;
       } else {
-        // Manuel komisyon gönderilmişse, eski mantıkla toplam komisyonu kullan
+        // Sadece acente satışı ve frontend komisyon göndermişse kullan (şube yok)
         totalCommission = input.sale.commission;
-        // Manuel durumda dağılımlı komisyon hesapla (gösterim için)
-        try {
-          const distributedCommission = await this.calculateDistributedCommission(
-            Number(input.sale.price),
-            input.branch_id || null,
-            input.agency_id || null
-          );
-          branchCommission = distributedCommission.branch_commission;
-          agencyCommission = distributedCommission.agency_commission;
-        } catch (error) {
-          // Hata durumunda null bırak
-          branchCommission = null;
-          agencyCommission = null;
-        }
+        agencyCommission = input.sale.commission;
+        branchCommission = null;
       }
 
       // 4. ÖDEME İŞLEMİ - PayTR için önce kontrol et, hiçbir kayıt oluşturma
@@ -787,57 +805,73 @@ export class SaleService {
       const sale = await queryRunner.manager.save(newSale);
       console.log('✅ Sale created (non-PayTR payment):', sale.id);
 
-      // 3.5. BAKİYE GÜNCELLEMELERİ
-      // Şube varsa: Şube bakiyesine branch_commission ekle
-      if (input.branch_id && branchCommission !== null && branchCommission > 0) {
-        const branch = await queryRunner.manager.findOne(Branch, {
-          where: { id: input.branch_id }
-        });
-        if (branch) {
-          const currentBalance = parseFloat(branch.balance?.toString() || '0') || 0;
-          branch.balance = currentBalance + branchCommission;
-          await queryRunner.manager.save(branch);
+      // 3.5. BAKİYE GÜNCELLEMELERİ (sadece bakiye ile ödeme DEĞİLSE)
+      // Bakiye ile ödemede komisyon bakiyeye eklenmez; sadece satış tutarı bakiyeden düşülür
+      if (input.payment.type !== PaymentType.BALANCE) {
+        // Şube varsa: Şube bakiyesine branch_commission ekle
+        if (input.branch_id && branchCommission !== null && branchCommission > 0) {
+          const branch = await queryRunner.manager.findOne(Branch, {
+            where: { id: input.branch_id }
+          });
+          if (branch) {
+            const currentBalance = parseFloat(branch.balance?.toString() || '0') || 0;
+            branch.balance = currentBalance + branchCommission;
+            await queryRunner.manager.save(branch);
+          }
         }
-      }
 
-      // Acente varsa: Acente bakiyesine agency_commission ekle
-      if (input.agency_id && agencyCommission !== null && agencyCommission > 0) {
-        const agency = await queryRunner.manager.findOne(Agency, {
-          where: { id: input.agency_id }
-        });
-        if (agency) {
-          const currentBalance = parseFloat(agency.balance?.toString() || '0') || 0;
-          agency.balance = currentBalance + agencyCommission;
-          await queryRunner.manager.save(agency);
+        // Acente varsa: Acente bakiyesine agency_commission ekle
+        if (input.agency_id && agencyCommission !== null && agencyCommission > 0) {
+          const agency = await queryRunner.manager.findOne(Agency, {
+            where: { id: input.agency_id }
+          });
+          if (agency) {
+            const currentBalance = parseFloat(agency.balance?.toString() || '0') || 0;
+            agency.balance = currentBalance + agencyCommission;
+            await queryRunner.manager.save(agency);
+          }
         }
       }
 
       // 4. ÖDEME İŞLEMİ (Bakiye ödemesi)
+      // Şube kullanıcısı ise şube bakiyesinden, acente kullanıcısı ise acente bakiyesinden düş
       let payment: Payment;
 
-        // Bakiye ödemesi
         if (!input.agency_id) {
           throw new AppError(400, 'Bakiye ödemesi için acente gerekli');
         }
 
-        const agency = await queryRunner.manager.findOne(Agency, {
-          where: { id: input.agency_id }
-        });
-
-        if (!agency) {
-          throw new AppError(404, 'Acente bulunamadı');
-        }
-
-        const currentBalance = parseFloat(agency.balance?.toString() || '0') || 0;
         const paymentAmount = parseFloat(input.sale.price?.toString() || '0') || 0;
 
-        if (currentBalance < paymentAmount) {
-          throw new AppError(400, `Yetersiz bakiye. Mevcut: ${currentBalance.toFixed(2)} TL, Gerekli: ${paymentAmount.toFixed(2)} TL`);
+        if (input.branch_id) {
+          // Şube kullanıcısı: şube bakiyesinden düş
+          const branch = await queryRunner.manager.findOne(Branch, {
+            where: { id: input.branch_id }
+          });
+          if (!branch) {
+            throw new AppError(404, 'Şube bulunamadı');
+          }
+          const currentBalance = parseFloat(branch.balance?.toString() || '0') || 0;
+          if (currentBalance < paymentAmount) {
+            throw new AppError(400, `Yetersiz şube bakiyesi. Mevcut: ${currentBalance.toFixed(2)} TL, Gerekli: ${paymentAmount.toFixed(2)} TL`);
+          }
+          branch.balance = currentBalance - paymentAmount;
+          await queryRunner.manager.save(branch);
+        } else {
+          // Acente kullanıcısı (şube yok): acente bakiyesinden düş
+          const agency = await queryRunner.manager.findOne(Agency, {
+            where: { id: input.agency_id }
+          });
+          if (!agency) {
+            throw new AppError(404, 'Acente bulunamadı');
+          }
+          const currentBalance = parseFloat(agency.balance?.toString() || '0') || 0;
+          if (currentBalance < paymentAmount) {
+            throw new AppError(400, `Yetersiz bakiye. Mevcut: ${currentBalance.toFixed(2)} TL, Gerekli: ${paymentAmount.toFixed(2)} TL`);
+          }
+          agency.balance = currentBalance - paymentAmount;
+          await queryRunner.manager.save(agency);
         }
-
-        // Bakiyeden düş
-        agency.balance = currentBalance - paymentAmount;
-        await queryRunner.manager.save(agency);
 
         payment = queryRunner.manager.create(Payment, {
           sale_id: sale.id,
@@ -1037,21 +1071,30 @@ export class SaleService {
 
       await queryRunner.manager.save(sale);
 
-      // Eğer bakiyeden ödeme yapılmışsa, iade tutarını bakiyeye geri ekle
+      // Eğer bakiyeden ödeme yapılmışsa, iade tutarını doğru bakiyeye geri ekle (şube satışıysa şube, acente satışıysa acente)
       const payment = await queryRunner.manager.findOne(Payment, {
         where: { sale_id: saleId }
       });
 
       if (payment && payment.type === PaymentType.BALANCE && sale.agency_id) {
-        // Acentenin bakiyesine iade tutarını ekle
-        const agency = await queryRunner.manager.findOne(Agency, {
-          where: { id: sale.agency_id }
-        });
-
-        if (agency) {
-          const currentBalance = parseFloat(agency.balance?.toString() || '0');
-          agency.balance = currentBalance + refundAmount;
-          await queryRunner.manager.save(agency);
+        if (sale.branch_id) {
+          const branch = await queryRunner.manager.findOne(Branch, {
+            where: { id: sale.branch_id }
+          });
+          if (branch) {
+            const currentBalance = parseFloat(branch.balance?.toString() || '0') || 0;
+            branch.balance = currentBalance + refundAmount;
+            await queryRunner.manager.save(branch);
+          }
+        } else {
+          const agency = await queryRunner.manager.findOne(Agency, {
+            where: { id: sale.agency_id }
+          });
+          if (agency) {
+            const currentBalance = parseFloat(agency.balance?.toString() || '0') || 0;
+            agency.balance = currentBalance + refundAmount;
+            await queryRunner.manager.save(agency);
+          }
         }
       }
 

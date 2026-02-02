@@ -12,7 +12,8 @@ import { MotorBrand } from '../entities/MotorBrand';
 import { MotorModel } from '../entities/MotorModel';
 import { IsNull } from 'typeorm';
 import { applyTenantFilter, applyAgencyFilter } from '../middlewares/tenantMiddleware';
-import { UserRole } from '../types/enums';
+import { UserRole, PaymentType, PaymentStatus } from '../types/enums';
+import { CommissionService } from './CommissionService';
 
 export class StatsService {
   private saleRepository = AppDataSource.getRepository(Sale);
@@ -22,9 +23,10 @@ export class StatsService {
   private branchRepository = AppDataSource.getRepository(Branch);
   private userRepository = AppDataSource.getRepository(User);
   private userAgencyRepository = AppDataSource.getRepository(UserAgency);
+  private commissionService = new CommissionService();
 
-  // Dashboard istatistikleri
-  async getDashboard(filter?: any) {
+  // Dashboard istatistikleri. currentUser: komisyon özeti rol bazlı filtrelenir (acente/şube kendi verisini görür).
+  async getDashboard(filter?: any, currentUser?: any) {
     const salesQb = this.saleRepository.createQueryBuilder('sale');
     const paymentsQb = this.paymentRepository.createQueryBuilder('payment');
     const customersQb = this.customerRepository.createQueryBuilder('customer');
@@ -257,6 +259,26 @@ export class StatsService {
 
     const recentRefunds = await recentRefundsQb.getMany();
 
+    // Bakiye ile ödenen satışların toplam tutarı (dashboard kartı için)
+    const balanceSalesQb = this.saleRepository
+      .createQueryBuilder('sale')
+      .innerJoin('sale.payments', 'payment', 'payment.type = :balanceType AND payment.status = :completedStatus', {
+        balanceType: PaymentType.BALANCE,
+        completedStatus: PaymentStatus.COMPLETED,
+      })
+      .select('SUM(sale.price)', 'total');
+    if (filter && Object.keys(filter).length > 0) {
+      applyTenantFilter(balanceSalesQb, filter, 'sale', 'user_id');
+    }
+    const balanceSalesRaw = await balanceSalesQb.getRawOne<{ total: string }>();
+    const totalSalesPaidByBalance = parseFloat(balanceSalesRaw?.total || '0') || 0;
+
+    // Komisyon özeti: ödenen / ödenecek bakiye (acente ve şube ayrı). Rol bazlı: Super Admin tümünü, acente kendi acente+şubelerini, şube yöneticisi sadece kendi şube satırını görür.
+    let commissionSummary = await this.commissionService.getSummary(filter, currentUser);
+    if (currentUser?.branch_id && Array.isArray(commissionSummary)) {
+      commissionSummary = commissionSummary.filter((row: any) => row.branchId === currentUser.branch_id);
+    }
+
     return {
       totalSales,
       totalCustomers,
@@ -271,6 +293,8 @@ export class StatsService {
       totalRefunds: parseInt(refundStats?.totalRefunds) || 0,
       totalRefundAmount: parseFloat(refundStats?.totalRefundAmount) || 0,
       recentRefunds,        // Son iadeler listesi
+      commissionSummary,   // Acente/şube bazında ödenen ve ödenecek komisyon
+      totalSalesPaidByBalance, // Bakiye ile ödenen satışların toplam tutarı (dashboard kartı)
     };
   }
 
@@ -1009,6 +1033,9 @@ export class StatsService {
       cityDistributionSample: cityDistribution.slice(0, 3),
     });
 
+    // Komisyon dağılımı: acente ve şube bazında ödenecek/ödenen bakiye (Satış Dağılım Raporu Super Admin için)
+    const commissionDistribution = await this.commissionService.getSummary(undefined, { role: UserRole.SUPER_ADMIN });
+
     return {
       topCarBrands: topCarBrands.map(item => ({
         brandId: parseInt(item.brandId),
@@ -1038,6 +1065,7 @@ export class StatsService {
         saleCount: parseInt(item.saleCount),
       })),
       cityDistribution: cityDistributionWithPlate,
+      commissionDistribution,
     };
   }
 }

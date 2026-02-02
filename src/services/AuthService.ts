@@ -226,6 +226,11 @@ export class AuthService {
     return { message: 'Password changed successfully' };
   }
 
+  /**
+   * /auth/me için kullanıcı bilgisi döner.
+   * branch_id ve agency_id açıkça dahil edilir; şube kullanıcılarında frontend'in
+   * doğru bakiyeyi (şube bakiyesi) gösterebilmesi için gerekli.
+   */
   async getUserById(userId: string) {
     const user = await this.userRepository.findOne({
       where: { id: userId },
@@ -239,6 +244,9 @@ export class AuthService {
     const { password, ...userWithoutPassword } = user;
     return {
       ...userWithoutPassword,
+      // Şube kullanıcıları için frontend'in şube bakiyesini gösterebilmesi için zorunlu
+      agency_id: user.agency_id ?? undefined,
+      branch_id: user.branch_id ?? undefined,
       is_active: user.status === EntityStatus.ACTIVE,
     };
   }

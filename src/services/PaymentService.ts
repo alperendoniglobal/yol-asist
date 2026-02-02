@@ -13,6 +13,7 @@ import { PayTRService } from './PayTRService';
 export class PaymentService {
   private paymentRepository = AppDataSource.getRepository(Payment);
   private agencyRepository = AppDataSource.getRepository(Agency);
+  private branchRepository = AppDataSource.getRepository(Branch);
   private saleRepository = AppDataSource.getRepository(Sale);
   private customerRepository = AppDataSource.getRepository(Customer);
   private vehicleRepository = AppDataSource.getRepository(Vehicle);
@@ -307,8 +308,13 @@ export class PaymentService {
     };
   }
 
+  /**
+   * Bakiye ile ödeme: Satış daha önce oluşturulmuş ve komisyon bakiyeye eklenmiş olabilir.
+   * Bakiye ile ödemede komisyon hesaplanmaz; bu satış için eklenen komisyonu geri alıp
+   * sadece satış tutarını bakiyeden düşüyoruz. Sale commission alanlarını 0 yapıyoruz (raporlama tutarlılığı).
+   */
   async processBalance(saleId: string, paymentData: any) {
-    // Önce satışı bul ve agency_id'yi al
+    // Satışı branch/agency ilişkileriyle al; komisyon tutarlarını okuyacağız
     const sale = await this.saleRepository.findOne({
       where: { id: saleId },
       relations: ['agency'],
@@ -323,9 +329,7 @@ export class PaymentService {
       throw new AppError(400, 'Sistem kayıtları için bakiye ödemesi yapılamaz. Lütfen satışı bir acenteye atayın.');
     }
 
-    // Agency_id'yi sale'den al (artık kesinlikle string)
     const agencyId = sale.agency_id;
-    
     const agency = await this.agencyRepository.findOne({
       where: { id: agencyId },
     });
@@ -334,24 +338,48 @@ export class PaymentService {
       throw new AppError(404, 'Agency not found');
     }
 
+    // Bu satış için daha önce bakiyeye eklenmiş komisyonu geri al (bakiye ile ödemede komisyon yok)
+    const branchCommission = parseFloat(sale.branch_commission?.toString() || '0') || 0;
+    const agencyCommission = parseFloat(sale.agency_commission?.toString() || sale.commission?.toString() || '0') || 0;
+
+    if (sale.branch_id && branchCommission > 0) {
+      const branch = await this.branchRepository.findOne({
+        where: { id: sale.branch_id },
+      });
+      if (branch) {
+        const branchBalance = parseFloat(branch.balance?.toString() || '0') || 0;
+        if (branchBalance >= branchCommission) {
+          branch.balance = branchBalance - branchCommission;
+          await this.branchRepository.save(branch);
+        }
+      }
+    }
+
+    let agencyBalance = parseFloat(agency.balance?.toString() || '0') || 0;
+    // Komisyonu geri al (bakiye ile ödemede bu satışa komisyon yazılmamış kabul edilir)
+    agencyBalance -= agencyCommission;
+
     // Amount'u sale'den al (paymentData.amount yoksa)
     const amount = paymentData.amount || sale.price || 0;
-    
-    // Sayısal değerlere çevir ve NaN kontrolü yap
-    const currentBalance = parseFloat(agency.balance?.toString() || '0') || 0;
     const paymentAmount = parseFloat(amount?.toString() || '0') || 0;
 
     if (isNaN(paymentAmount) || paymentAmount <= 0) {
       throw new AppError(400, 'Invalid payment amount');
     }
 
-    if (currentBalance < paymentAmount) {
-      throw new AppError(400, `Yetersiz bakiye. Mevcut: ${currentBalance.toFixed(2)} TL, Gerekli: ${paymentAmount.toFixed(2)} TL`);
+    if (agencyBalance < paymentAmount) {
+      throw new AppError(400, `Yetersiz bakiye. Mevcut: ${agencyBalance.toFixed(2)} TL, Gerekli: ${paymentAmount.toFixed(2)} TL`);
     }
 
-    // Bakiyeden düş
-    agency.balance = currentBalance - paymentAmount;
+    // Komisyon geri alındı + satış tutarı düşülecek: tek seferde bakiyeyi güncelle
+    agency.balance = agencyBalance - paymentAmount;
     await this.agencyRepository.save(agency);
+
+    // Bakiye ile ödendiği için satışın komisyon alanlarını 0 yap (raporlama tutarlılığı)
+    sale.commission = 0;
+    sale.branch_commission = null;
+    sale.agency_commission = null;
+    await this.saleRepository.save(sale);
 
     const payment = this.paymentRepository.create({
       sale_id: saleId,

@@ -9,8 +9,10 @@ const commissionController = new CommissionController();
 router.use(authMiddleware);
 router.use(tenantMiddleware);
 
-// CRUD operations
+// CRUD operations - summary ve balance-paid-stats /:id'den önce olmalı
 router.get('/', commissionController.getAll);
+router.get('/summary', commissionController.getSummary);
+router.get('/balance-paid-stats', commissionController.getBalancePaidStats);
 router.get('/:id', commissionController.getById);
 router.post('/', agencyAdminOrAbove, commissionController.create);
 
