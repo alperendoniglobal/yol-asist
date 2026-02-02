@@ -10,20 +10,19 @@ export class BranchController {
     this.branchService = new BranchService();
   }
 
-  // Tum subeleri getir (komisyon bilgileriyle birlikte)
+  // Tum subeleri getir (komisyon bilgileriyle birlikte). agency_id query ile acente bazlı filtreleme (Super Admin için).
   getAll = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-    // Komisyon bilgisi de dahil edilsin mi?
     const includeCommission = req.query.includeCommission === 'true';
-    
-    // SUPER_AGENCY_ADMIN için currentUser'ı gönder (yönettiği brokerların acentelerini filtrelemek için)
+    const agencyId = req.query.agency_id as string | undefined;
+    const filter = { ...req.tenantFilter, ...(agencyId && { agency_id: agencyId }) };
+
     let branches;
     if (includeCommission) {
-      // Efektif komisyon oranlarıyla birlikte getir
-      branches = await this.branchService.getAllWithCommission(req.tenantFilter, req.user);
+      branches = await this.branchService.getAllWithCommission(filter, req.user);
     } else {
-      branches = await this.branchService.getAll(req.tenantFilter, req.user);
+      branches = await this.branchService.getAll(filter, req.user);
     }
-    
+
     successResponse(res, branches, 'Subeler basariyla getirildi');
   });
 

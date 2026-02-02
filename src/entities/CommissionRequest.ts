@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { CommissionRequestStatus } from '../types/enums';
 import { Agency } from './Agency';
+import { Branch } from './Branch';
 
 @Entity('commission_requests')
 export class CommissionRequest {
@@ -17,6 +18,10 @@ export class CommissionRequest {
 
   @Column({ type: 'uuid' })
   agency_id: string;
+
+  /** Şube ödemesi ise dolu; acente ödemesi ise null */
+  @Column({ type: 'uuid', nullable: true })
+  branch_id: string | null;
 
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   amount: number;
@@ -50,4 +55,8 @@ export class CommissionRequest {
   @ManyToOne(() => Agency, agency => agency.commission_requests, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'agency_id' })
   agency: Agency;
+
+  @ManyToOne(() => Branch, { onDelete: 'CASCADE', nullable: true })
+  @JoinColumn({ name: 'branch_id' })
+  branch: Branch | null;
 }

@@ -13,7 +13,7 @@ export class SaleController {
   }
 
   getAll = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-    const { search } = req.query; // Arama sorgusu (opsiyonel)
+    const { search, payment_type } = req.query; // Arama + ödeme türü filtresi (BALANCE / PAYTR)
     
     // SUPPORT rolü için: search parametresi yoksa boş array döndür
     if (req.user?.role === UserRole.SUPPORT && !search) {
@@ -24,7 +24,8 @@ export class SaleController {
     const sales = await this.saleService.getAll(
       req.tenantFilter, 
       search as string | undefined,
-      req.user?.role // User role'ü geçir
+      req.user?.role,
+      payment_type as string | undefined // Bakiye ile ödenenleri veya PayTR ile ödenenleri filtrele
     );
     
     // BRANCH_USER rolündeki kullanıcılar komisyon bilgisini göremez

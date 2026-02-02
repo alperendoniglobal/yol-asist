@@ -4,7 +4,9 @@ import { Sale } from '../entities/Sale';
 import { Customer } from '../entities/Customer';
 import { Branch } from '../entities/Branch';
 import { UserAgency } from '../entities/UserAgency';
+import { CommissionRequest } from '../entities/CommissionRequest';
 import { AppError } from '../middlewares/errorHandler';
+import { CommissionRequestStatus, PaymentType, PaymentStatus } from '../types/enums';
 import { UserRole } from '../types/enums';
 
 export class AgencyService {
@@ -13,6 +15,7 @@ export class AgencyService {
   private customerRepository = AppDataSource.getRepository(Customer);
   private branchRepository = AppDataSource.getRepository(Branch);
   private userAgencyRepository = AppDataSource.getRepository(UserAgency);
+  private commissionRequestRepository = AppDataSource.getRepository(CommissionRequest);
 
   async getAll(filter?: any, currentUser?: any) {
     const queryBuilder = this.agencyRepository
@@ -185,7 +188,7 @@ export class AgencyService {
       where: { agency_id: agencyId },
     });
 
-    // Her şube için komisyon dağılımını hesapla
+    // Her şube için komisyon dağılımını hesapla (satıştan kazanılan + ödenen komisyon + bakiye)
     const branchReports = await Promise.all(
       branches.map(async (branch) => {
         // Şubeye ait satışları al (branch_commission ve agency_commission ile)
@@ -198,13 +201,13 @@ export class AgencyService {
         // Toplam satış tutarı
         const totalSalesAmount = sales.reduce((sum, sale) => sum + Number(sale.price || 0), 0);
 
-        // Şube komisyonu toplamı
+        // Şube komisyonu toplamı (satışlardan kazanılan)
         const totalBranchCommission = sales.reduce(
           (sum, sale) => sum + Number(sale.branch_commission || 0),
           0
         );
 
-        // Acente komisyonu toplamı
+        // Acente komisyonu toplamı (satışlardan kazanılan)
         const totalAgencyCommission = sales.reduce(
           (sum, sale) => sum + Number(sale.agency_commission || 0),
           0
@@ -212,6 +215,16 @@ export class AgencyService {
 
         // Toplam komisyon (şube + acente)
         const totalCommission = totalBranchCommission + totalAgencyCommission;
+
+        // Şubeye ödenen komisyon toplamı (commission_requests, status=PAID)
+        const branchPaidRaw = await this.commissionRequestRepository
+          .createQueryBuilder('cr')
+          .select('COALESCE(SUM(cr.amount), 0)', 'total')
+          .where('cr.branch_id = :branchId', { branchId: branch.id })
+          .andWhere('cr.status = :status', { status: CommissionRequestStatus.PAID })
+          .getRawOne<{ total: string }>();
+        const total_paid = parseFloat(branchPaidRaw?.total || '0') || 0;
+        const balance = parseFloat(branch.balance?.toString() || '0') || 0;
 
         return {
           branch_id: branch.id,
@@ -223,6 +236,8 @@ export class AgencyService {
           total_branch_commission: totalBranchCommission,
           total_agency_commission: totalAgencyCommission,
           total_commission: totalCommission,
+          total_paid,
+          balance,
         };
       })
     );
@@ -244,14 +259,46 @@ export class AgencyService {
       0
     );
 
-    // Toplam özet
+    // Acente seviyesinde ödenen komisyon (branch_id IS NULL) ve bakiye
+    const agencyPaidRaw = await this.commissionRequestRepository
+      .createQueryBuilder('cr')
+      .select('COALESCE(SUM(cr.amount), 0)', 'total')
+      .where('cr.agency_id = :agencyId', { agencyId })
+      .andWhere('cr.branch_id IS NULL')
+      .andWhere('cr.status = :status', { status: CommissionRequestStatus.PAID })
+      .getRawOne<{ total: string }>();
+    const agency_total_paid = parseFloat(agencyPaidRaw?.total || '0') || 0;
+    const agency_balance = parseFloat(agency.balance?.toString() || '0') || 0;
+
+    // Toplam özet (kazanılan + ödenen / bakiye dahil)
+    const total_paid_all = agency_total_paid + branchReports.reduce((s, r) => s + (r.total_paid ?? 0), 0);
+    const total_balance_all = agency_balance + branchReports.reduce((s, r) => s + (r.balance ?? 0), 0);
+
     const totalSummary = {
       total_sales_count: branchReports.reduce((sum, report) => sum + report.total_sales_count, 0) + salesWithoutBranch.length,
       total_sales_amount: branchReports.reduce((sum, report) => sum + report.total_sales_amount, 0) + totalSalesWithoutBranch,
       total_branch_commission: branchReports.reduce((sum, report) => sum + report.total_branch_commission, 0),
       total_agency_commission: branchReports.reduce((sum, report) => sum + report.total_agency_commission, 0) + totalAgencyCommissionWithoutBranch,
       total_commission: branchReports.reduce((sum, report) => sum + report.total_commission, 0) + totalAgencyCommissionWithoutBranch,
+      agency_total_paid,
+      agency_balance,
+      total_paid_all,
+      total_balance_all,
     };
+
+    // Bu broker'a ait bakiye ile ödenen satışlar (komisyon kesilmez; sayfada yansıtılır)
+    const balancePaidQb = this.saleRepository
+      .createQueryBuilder('sale')
+      .innerJoin('sale.payments', 'payment', 'payment.type = :balanceType AND payment.status = :completedStatus', {
+        balanceType: PaymentType.BALANCE,
+        completedStatus: PaymentStatus.COMPLETED,
+      })
+      .where('sale.agency_id = :agencyId', { agencyId })
+      .select('COUNT(sale.id)', 'count')
+      .addSelect('COALESCE(SUM(sale.price), 0)', 'total');
+    const balancePaidRaw = await balancePaidQb.getRawOne<{ count: string; total: string }>();
+    const balance_paid_sales_count = parseInt(balancePaidRaw?.count || '0', 10) || 0;
+    const balance_paid_sales_amount = parseFloat(balancePaidRaw?.total || '0') || 0;
 
     return {
       agency_id: agency.id,
@@ -264,6 +311,8 @@ export class AgencyService {
         total_agency_commission: totalAgencyCommissionWithoutBranch,
       },
       summary: totalSummary,
+      balance_paid_sales_count,
+      balance_paid_sales_amount,
     };
   }
 }

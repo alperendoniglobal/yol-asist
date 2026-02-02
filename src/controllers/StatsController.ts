@@ -15,8 +15,8 @@ export class StatsController {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
-    
-    const stats = await this.statsService.getDashboard(req.tenantFilter);
+    // Komisyon özeti (ödenen / ödenecek) acente-şube bazında; kullanıcı rolüne göre filtrelenir
+    const stats = await this.statsService.getDashboard(req.tenantFilter, req.user);
     successResponse(res, stats, 'Dashboard stats retrieved successfully');
   });
 
