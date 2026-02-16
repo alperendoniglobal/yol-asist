@@ -23,6 +23,7 @@ import dealerApplicationRoutes from './dealerApplicationRoutes';
 import userCustomerRoutes from './userCustomerRoutes';
 import contractRoutes from './contractRoutes';
 import activeUsersRoutes from './activeUsersRoutes';
+import smsRoutes from './smsRoutes';
 
 const router = Router();
 
@@ -55,6 +56,7 @@ router.use('/content', contentRoutes);
 router.use('/dealer-applications', dealerApplicationRoutes);
 router.use('/contract', contractRoutes);
 router.use('/active-users', activeUsersRoutes);
+router.use('/sms', smsRoutes);
 
 // Health check
 router.get('/health', (req, res) => {

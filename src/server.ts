@@ -1,9 +1,11 @@
 import 'reflect-metadata';
+import cron from 'node-cron';
 import app from './app';
 import { AppDataSource } from './config/database';
 import { config } from './config';
 import logger from './utils/logger';
 import { initializeSocketServer } from './socket/socketServer';
+import { RainyDaySmsService } from './services/RainyDaySmsService';
 
 // Refund kolonları eklendi - 10.12.2025
 
@@ -23,6 +25,31 @@ const startServer = async () => {
     // Initialize Socket.io server
     initializeSocketServer(server);
     logger.info('Socket.io server initialized and ready for connections');
+
+    // Yağmurlu gün SMS: Her gün 09:00 (Europe/Istanbul) çalışır
+    const rainyDaySmsService = new RainyDaySmsService();
+    cron.schedule(
+      '0 9 * * *',
+      async () => {
+        try {
+          logger.info('Yağmurlu gün SMS cron job başladı');
+          const result = await rainyDaySmsService.runRainyDaySms();
+          logger.info('Yağmurlu gün SMS tamamlandı', {
+            citiesChecked: result.citiesChecked,
+            rainyCitiesCount: result.rainyCitiesCount,
+            smsSent: result.smsSent,
+            rainyCities: result.rainyCities,
+          });
+          if (result.errors.length > 0) {
+            logger.warn('Yağmurlu gün SMS hataları', { errors: result.errors });
+          }
+        } catch (err: any) {
+          logger.error('Yağmurlu gün SMS cron hatası', { error: err?.message || err });
+        }
+      },
+      { timezone: 'Europe/Istanbul' }
+    );
+    logger.info('Yağmurlu gün SMS cron scheduled (09:00 Europe/Istanbul)');
 
     // Graceful shutdown
     const gracefulShutdown = async (signal: string) => {

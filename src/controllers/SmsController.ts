@@ -1,8 +1,10 @@
 import { Request, Response } from 'express';
 import { asyncHandler } from '../middlewares/errorHandler';
 import { SmsService } from '../services/SmsService';
+import { RainyDaySmsService } from '../services/RainyDaySmsService';
 
 const smsService = new SmsService();
+const rainyDaySmsService = new RainyDaySmsService();
 
 /**
  * SMS Controller
@@ -100,6 +102,41 @@ export class SmsController {
     res.status(200).json({
       success: true,
       message: 'SMS\'ler başarıyla gönderildi',
+      data: result,
+    });
+  });
+
+  /**
+   * Yağmurlu gün SMS: Bugün yağmurlu tahmin edilen illerdeki müşterilere bilgilendirme SMS'i gönderir.
+   * Sadece SUPER_ADMIN tetikleyebilir (cron veya manuel).
+   * POST /api/v1/sms/rainy-day
+   */
+  rainyDaySms = asyncHandler(async (req: Request, res: Response) => {
+    const result = await rainyDaySmsService.runRainyDaySms();
+    res.status(200).json({
+      success: true,
+      message: 'Yağmurlu gün SMS işlemi tamamlandı',
+      data: result,
+    });
+  });
+
+  /**
+   * Seçilen müşterilere, kayıtlı illerinin hava durumunu içeren kişiselleştirilmiş SMS gönderir.
+   * POST /api/v1/sms/send-weather-selected
+   * Body: { customerIds: string[] }
+   */
+  sendWeatherToSelected = asyncHandler(async (req: Request, res: Response) => {
+    const { customerIds } = req.body;
+    if (!customerIds || !Array.isArray(customerIds) || customerIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'customerIds zorunludur ve en az bir ID içermelidir',
+      });
+    }
+    const result = await rainyDaySmsService.sendWeatherSmsToCustomerIds(customerIds);
+    res.status(200).json({
+      success: true,
+      message: 'Hava durumlu SMS işlemi tamamlandı',
       data: result,
     });
   });
