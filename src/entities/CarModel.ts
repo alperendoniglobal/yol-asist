@@ -21,7 +21,7 @@ export class CarModel {
   name: string;
 
   @Column({ type: 'varchar', length: 50, nullable: true })
-  value: string;
+  value: string | null;
 
   @CreateDateColumn()
   created_at: Date;

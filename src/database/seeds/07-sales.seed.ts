@@ -59,8 +59,10 @@ export const seedSales = async () => {
     const agency = await agencyRepository.findOne({ where: { id: vehicle.agency_id } });
     if (!agency) continue;
 
-    // Komisyonu hesapla (Paket fiyatı × Acente komisyon oranı / 100)
-    const commission = (parseFloat(pkg.price.toString()) * parseFloat(agency.commission_rate.toString())) / 100;
+    // Komisyon KDV hariç net fiyat üzerinden: net = fiyat / 1.20, komisyon = net × oran / 100
+    const priceWithVat = parseFloat(pkg.price.toString());
+    const netPrice = priceWithVat / 1.20;
+    const commission = (netPrice * parseFloat(agency.commission_rate.toString())) / 100;
 
     // Rastgele başlangıç tarihi (son 6 ay içinde)
     const randomDays = Math.floor(Math.random() * 180);

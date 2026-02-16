@@ -19,8 +19,7 @@ export class CarModelController {
   getById = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
     const model = await this.modelService.getById(parseInt(id));
-    
-    // Model bulunamazsa 404 döndür
+
     if (!model) {
       res.status(404).json({
         success: false,
@@ -29,7 +28,7 @@ export class CarModelController {
       });
       return;
     }
-    
+
     successResponse(res, model, 'Car model retrieved successfully');
   });
 
@@ -37,6 +36,26 @@ export class CarModelController {
     const { brandId } = req.params;
     const models = await this.modelService.getByBrand(parseInt(brandId));
     successResponse(res, models, 'Car models retrieved successfully');
+  });
+
+  /** Yeni model oluştur (Sadece SUPER_ADMIN) */
+  create = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const model = await this.modelService.create(req.body);
+    successResponse(res, model, 'Car model created successfully', 201);
+  });
+
+  /** Model güncelle (Sadece SUPER_ADMIN) */
+  update = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { id } = req.params;
+    const model = await this.modelService.update(parseInt(id), req.body);
+    successResponse(res, model, 'Car model updated successfully');
+  });
+
+  /** Model sil (Sadece SUPER_ADMIN; kullanımdaki model silinemez) */
+  delete = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { id } = req.params;
+    const result = await this.modelService.delete(parseInt(id));
+    successResponse(res, result, 'Car model deleted successfully');
   });
 }
 

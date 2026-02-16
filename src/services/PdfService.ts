@@ -105,31 +105,40 @@ export class PdfService {
       doc.rect(0, 0, 595, 100).fill(this.colors.primary);
       
       // Acente bilgisi (logo kaldırıldı, sadece referans için)
-      const agency = sale.agency;
       
-      // Sol üst köşe - 7/24 Çağrı Destek (Mavi arka plan üzerine beyaz yazı)
+      // Sağ üst köşe - 7/24 Çağrı Destek (header'ın sağına alındı, beyaz yazı)
       doc.font(boldFont).fontSize(10).fillColor('#fff')
-         .text('7/24 ÇAĞRI DESTEK', 40, 8);
+         .text('7/24 ÇAĞRI DESTEK', 400, 8, { width: 155, align: 'right' });
       doc.font(defaultFont).fontSize(9).fillColor('#fff')
-         .text('+90 (850) 304 54 40', 40, 20);
-      
+         .text('+90 (850) 304 54 40', 400, 20, { width: 155, align: 'right' });
+
       // Sol taraf - Çözüm Asistan logosu kutusu
       doc.roundedRect(30, 35, 200, 60, 5).fill('#fff');
       
-      const logoPath = path.join(this.assetsPath, 'cozumasistanlog.svg');
+      // Önce cozumasistanlog.svg'nin PNG versiyonunu kullan (aynı tasarım, PDF'te çizilebilir)
+      // PNG: npm run generate-logo-png ile üretilir (SVG içindeki gömülü görsel mavi tonlanır)
+      const logoPngPath = path.join(this.assetsPath, 'cozumasistanlog.png');
       let logoDrawn = false;
-      
-      if (fs.existsSync(logoPath)) {
+      if (fs.existsSync(logoPngPath)) {
         try {
-          const svgContent = fs.readFileSync(logoPath, 'utf8');
-          // Logo rengini maviye çevir (#fff -> #1e40af)
-          const svgBlue = svgContent.replace(/fill:\s*#fff/g, 'fill: #1e40af');
-          SVGtoPDF(doc, svgBlue, 40, 45, { width: 180, height: 45 });
+          doc.image(logoPngPath, 40, 45, { width: 180, height: 45 });
           logoDrawn = true;
-          console.log('Logo SVG çizildi (mavi)');
         } catch (e) {
-          console.error('Logo SVG hatası:', e);
-          logoDrawn = false;
+          console.error('Logo PNG hatası:', e);
+        }
+      }
+      // PNG yoksa vektör logo (cozumasistanlogaa.svg) yedek olarak kullanılır
+      if (!logoDrawn) {
+        const logoSvgPath = path.join(this.assetsPath, 'cozumasistanlogaa.svg');
+        if (fs.existsSync(logoSvgPath)) {
+          try {
+            const svgContent = fs.readFileSync(logoSvgPath, 'utf8');
+            const svgBlue = svgContent.replace(/fill:\s*#fff/g, 'fill: #1e40af');
+            SVGtoPDF(doc, svgBlue, 40, 45, { width: 180, height: 45 });
+            logoDrawn = true;
+          } catch (e) {
+            console.error('Logo SVG hatası:', e);
+          }
         }
       }
       
@@ -138,29 +147,6 @@ export class PdfService {
         doc.font(boldFont).fontSize(18).fillColor(this.colors.primary).text('ÇÖZÜM ASİSTAN', 45, 50);
         doc.font(defaultFont).fontSize(8).fillColor(this.colors.textLight).text('Yol Yardım Hizmetleri', 45, 70);
       }
-      
-      // Sağ üst köşe - Satış bilgileri kutusu
-      // Acente logosu kaldırıldı, normal pozisyonda
-      const salesInfoX = 350;
-      const salesInfoWidth = 205;
-      const salesInfoHeight = 80; // Yüksekliği artırdık (4 satır için)
-      
-      doc.roundedRect(salesInfoX, 35, salesInfoWidth, salesInfoHeight, 5).fill('#fff');
-      doc.font(boldFont).fontSize(9).fillColor(this.colors.primary)
-         .text('SATIŞ BİLGİLERİ', salesInfoX + 10, 42);
-      doc.font(defaultFont).fontSize(7.5).fillColor(this.colors.text);
-      doc.text(`Satış No: ${sale.id.slice(0, 8).toUpperCase()}`, salesInfoX + 10, 55);
-      // Tanzim tarihi: Satışın gerçekleştiği tarih (sale.created_at) - PDF oluşturulma tarihi değil!
-      // sale.created_at zaten bir Date objesi veya string olabilir, güvenli şekilde parse ediyoruz
-      const tanzimDate = sale.created_at instanceof Date 
-        ? sale.created_at 
-        : sale.created_at 
-          ? new Date(sale.created_at) 
-          : new Date();
-      doc.text(`Tanzim: ${this.formatDateTime(tanzimDate)}`, salesInfoX + 10, 66);
-      // Başlangıç ve bitiş tarihlerini alt alta yaz
-      doc.text(`Başlangıç: ${this.formatDateTime(new Date(sale.start_date))}`, salesInfoX + 10, 77);
-      doc.text(`Bitiş: ${this.formatDateTime(new Date(sale.end_date))}`, salesInfoX + 10, 88);
 
       y = 115;
 
@@ -177,8 +163,8 @@ export class PdfService {
       const col2X = 300;
       const cardWidth = 240;
 
-      // ---------- SİGORTALI BİLGİLERİ KARTI ----------
-      this.drawCard(doc, col1X, y, cardWidth, 130, 'SİGORTALI BİLGİLERİ', boldFont);
+      // ---------- MÜŞTERİ BİLGİLERİ KARTI ----------
+      this.drawCard(doc, col1X, y, cardWidth, 130, 'HİZMET ALAN ÜYE BİLGİLERİ ', boldFont);
       let cardY = y + 30;
       doc.font(defaultFont).fontSize(9).fillColor(this.colors.text);
       
@@ -231,29 +217,37 @@ export class PdfService {
 
       y += 145;
 
-      // ---------- KAYNAK BİLGİLERİ KARTI ----------
-      this.drawCard(doc, col1X, y, cardWidth, 85, 'KAYNAK BİLGİLERİ', boldFont);
+      // ---------- SATIŞ BİLGİLERİ KARTI (Kaynak bilgileri kaldırıldığı için buraya taşındı) ----------
+      // Başlangıç ve bitiş tarihleri PDF'de 1 hafta sonrası gösterilir (gerçek tarih + 7 gün)
+      const startDateDisplay = new Date(sale.start_date);
+      startDateDisplay.setDate(startDateDisplay.getDate() + 7);
+      const endDateDisplay = new Date(sale.end_date);
+      endDateDisplay.setDate(endDateDisplay.getDate() + 7);
+      // Tanzim de +7 gün gösterilir (Tanzim, Başlangıç, Bitiş hepsi 7 gün sonrası)
+      const tanzimDate = sale.created_at instanceof Date
+        ? new Date(sale.created_at)
+        : sale.created_at
+          ? new Date(sale.created_at)
+          : new Date();
+      tanzimDate.setDate(tanzimDate.getDate() + 7);
+
+      // İkinci satır kartları: SATIŞ ve PAKET aynı yükseklikte (üstteki MÜŞTERİ/ARAÇ kartlarıyla uyumlu)
+      const coversHeight = 30 + (covers.length * 14) + 30;
+      const secondRowCardHeight = Math.max(130, coversHeight);
+
+      this.drawCard(doc, col1X, y, cardWidth, secondRowCardHeight, 'HİZMET BİLGİLERİ', boldFont);
       cardY = y + 30;
-      
-      if (agency) {
-        this.drawFieldInline(doc, col1X + 10, cardY, 'Kaynak', agency.name, defaultFont);
-        cardY += 15;
-      }
-      if (branch) {
-        this.drawFieldInline(doc, col1X + 10, cardY, 'Şube', branch.name, defaultFont);
-        cardY += 15;
-      }
-      if (user) {
-        this.drawFieldInline(doc, col1X + 10, cardY, 'Temsilci', `${user.name} ${user.surname || ''}`, defaultFont);
-        cardY += 15;
-      }
-      if (agency?.phone) {
-        this.drawFieldInline(doc, col1X + 10, cardY, 'Telefon', agency.phone, defaultFont);
-      }
+      doc.font(defaultFont).fontSize(9).fillColor(this.colors.text);
+      doc.text(`Hizmet No: ${sale.id.slice(0, 8).toUpperCase()}`, col1X + 10, cardY);
+      cardY += 15;
+      doc.text(`Tanzim: ${this.formatDateTime(tanzimDate)}`, col1X + 10, cardY);
+      cardY += 15;
+      doc.text(`Başlangıç: ${this.formatDateTime(startDateDisplay)}`, col1X + 10, cardY);
+      cardY += 15;
+      doc.text(`Bitiş: ${this.formatDateTime(endDateDisplay)}`, col1X + 10, cardY);
 
       // ---------- PAKET BİLGİLERİ KARTI ----------
-      const coversHeight = 30 + (covers.length * 14) + 30;
-      this.drawCard(doc, col2X, y, cardWidth, Math.max(85, coversHeight), 'PAKET BİLGİLERİ', boldFont);
+      this.drawCard(doc, col2X, y, cardWidth, secondRowCardHeight, 'PAKET BİLGİLERİ', boldFont);
       cardY = y + 30;
       
       if (pkg) {
@@ -275,7 +269,7 @@ export class PdfService {
         }
       }
 
-      y += Math.max(100, coversHeight + 15);
+      y += secondRowCardHeight + 15;
 
       // ==================== FİYAT TABLOSU ====================
       // Tam genişlikte fiyat kartı
@@ -335,11 +329,12 @@ export class PdfService {
           'Yakıt Bitmesi/Şarj Bitmesi: Fosil yakıtlı araçlarda yakıt bitmesi ya da elektrik motorlu araçlarda pil bitmesi sonucu hareketsiz kalması sonucu en yakın ilgili istasyona çekim sağlanır. (Limitler dahilinde)',
         ]},
         { title: 'GENEL ŞARTLAR', items: [
-          'Hizmetlerden yalnızca çağrı merkezimize iletilen taleplere destek sağlanacaktır.',
-          'b) Sözleşmenin ilk sayfasında belirtilen limitler dahilinde çekme/kurtarma işlemi en yakın servis/tamirhaneye kadar çekim hizmeti verilir.',
-          'c) Paket limit aşımları ve bu aşımdan kaynaklı köprü/otoyol/otopark ücretleri sigortalı tarafından karşılanır.',
-          'd) Aracın emtia (yükünden) dolayı çekme/kurtarma işlemi yapılamıyorsa yükün boşaltılmasından ÇÖZÜM ASİSTAN firması sorumlu değildir. Ancak araçta bulunan Emtia ile çekme/kurtarma teknik olarak mümkünse sigortalının yazılı onayı ile çekim yapılacaktır ve bu çekimden dolayı emtia ve araçta oluşabilecek hasarlardan "ÇÖZÜM ASİSTAN" sorumlu değildir.',
-          'e) Ağır ticari araç gruplarında her durumda sadece motorlu araç(kupa) için hizmet verilir.',
+          'a) İş bu hizmet sözleşmesi tanzim tarihinden 7 gün sonra geçerli olacaktır. 7 gün bekleme süresi vardır.',
+          'b) Hizmetlerden yalnızca çağrı merkezimize iletilen taleplere destek sağlanacaktır.',
+          'c) Sözleşmenin ilk sayfasında belirtilen limitler dahilinde çekme/kurtarma işlemi en yakın servis/tamirhaneye kadar çekim hizmeti verilir.',
+          'd) Paket limit aşımları ve bu aşımdan kaynaklı köprü/otoyol/otopark ücretleri müşteri tarafından karşılanır.',
+          'e) Aracın emtia (yükünden) dolayı çekme/kurtarma işlemi yapılamıyorsa yükün boşaltılmasından ÇÖZÜM ASİSTAN firması sorumlu değildir. Ancak araçta bulunan Emtia ile çekme/kurtarma teknik olarak mümkünse müşterinin yazılı onayı ile çekim yapılacaktır ve bu çekimden dolayı emtia ve araçta oluşabilecek hasarlardan "ÇÖZÜM ASİSTAN" sorumlu değildir.',
+          'f) Ağır ticari araç gruplarında her durumda sadece motorlu araç(kupa) için hizmet verilir.',
         ]},
         { title: 'KAPSAM DIŞI DURUMLAR', items: [
           'Aracın çamura saplanması, farlarının aydınlatmaması, cam silgiclerinin çalışmaması',
@@ -354,8 +349,8 @@ export class PdfService {
         { title: 'SÖZLEŞME İPTAL ŞARTLARI', items: [
           'a) Sözleşme 7 gün içerisinde başlangıcından iptal edilebilir',
           'b) 7 günden sonra gelen iptal taleplerinde banka tahsilat komisyonu kesilerek gün esaslı iptal yapılır',
-          'c) Sözleşme süresi içerisinde 3 ve üzerinde çekim talebi gelmesi durumunda sözleşme primsiz olarak otomatik iptal edilir',
-          'd) Herhangi bir hizmet kullanımı olan sözleşmelerde iptal talebi gelmesi durumunda prim iadesi yapılmaz',
+          'c) Sözleşme süresi içerisinde 3 ve üzerinde çekim talebi gelmesi durumunda sözleşme bedelsiz olarak otomatik iptal edilir',
+          'd) Herhangi bir hizmet kullanımı olan sözleşmelerde iptal talebi gelmesi durumunda ücret iadesi yapılmaz',
         ]},
       ];
 

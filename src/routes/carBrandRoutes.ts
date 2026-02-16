@@ -1,16 +1,21 @@
 import { Router } from 'express';
 import { CarBrandController } from '../controllers/CarBrandController';
-import { authMiddleware } from '../middlewares';
+import { authMiddleware, superAdminOnly } from '../middlewares';
 
 const router = Router();
 const brandController = new CarBrandController();
 
-// All routes require authentication
+// Tüm route'lar authentication gerektirir
 router.use(authMiddleware);
 
-// Public endpoints (no tenant filter needed for brands)
+// Listeleme ve tek kayıt (tüm yetkili kullanıcılar)
 router.get('/', brandController.getAll);
 router.get('/:id', brandController.getById);
+
+// Oluştur / Güncelle / Sil — sadece SUPER_ADMIN
+router.post('/', superAdminOnly, brandController.create);
+router.put('/:id', superAdminOnly, brandController.update);
+router.delete('/:id', superAdminOnly, brandController.delete);
 
 export default router;
 
