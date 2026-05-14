@@ -49,9 +49,9 @@ export class Customer {
   @Column({ type: 'varchar', length: 255, nullable: true, comment: 'Vergi Dairesi (Kurumsal için)' })
   tax_office: string;
 
-  // Doğum Tarihi (Bireysel için önemli, Kurumsal için opsiyonel)
+  // Doğum Tarihi (Bireysel için önemli, Kurumsal için opsiyonel; kurumsalda boş olabilir)
   @Column({ type: 'date', nullable: true, comment: 'Doğum Tarihi' })
-  birth_date: Date;
+  birth_date: Date | null;
 
   @Column({ type: 'varchar', length: 50 })
   phone: string;

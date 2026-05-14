@@ -53,7 +53,16 @@ export class CustomerService {
   }
 
   async create(data: Partial<Customer>) {
-    const customer = this.customerRepository.create(data);
+    // MySQL DATE sütunu boş string kabul etmez; boş/geçersiz ise null yap
+    const normalized = { ...data };
+    if (normalized.birth_date !== undefined && normalized.birth_date !== null) {
+      const v = normalized.birth_date;
+      const asStr = typeof v === 'string' ? (v as string).trim() : '';
+      if (asStr === '' || asStr === 'undefined' || asStr === 'null') {
+        (normalized as any).birth_date = null;
+      }
+    }
+    const customer = this.customerRepository.create(normalized);
     await this.customerRepository.save(customer);
     return customer;
   }
@@ -65,7 +74,17 @@ export class CustomerService {
       throw new AppError(404, 'Customer not found');
     }
 
-    Object.assign(customer, data);
+    // MySQL DATE sütunu boş string kabul etmez; boş/geçersiz ise null yap
+    const normalized = { ...data };
+    if (normalized.birth_date !== undefined && normalized.birth_date !== null) {
+      const v = normalized.birth_date;
+      const asStr = typeof v === 'string' ? (v as string).trim() : '';
+      if (asStr === '' || asStr === 'undefined' || asStr === 'null') {
+        (normalized as any).birth_date = null;
+      }
+    }
+
+    Object.assign(customer, normalized);
     await this.customerRepository.save(customer);
     return customer;
   }

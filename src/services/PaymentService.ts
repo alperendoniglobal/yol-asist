@@ -683,14 +683,16 @@ export class PaymentService {
           if (existingCustomer) {
             customer = existingCustomer;
           } else {
-            // Yeni müşteri oluştur
+            // Yeni müşteri oluştur (birth_date boş string ise MySQL DATE hatası önlenir)
+            const bd = saleData.customer.birth_date;
+            const birthDate = (bd != null && String(bd).trim() !== '') ? saleData.customer.birth_date : null;
             customer = queryRunner.manager.create(Customer, {
               is_corporate: saleData.customer.is_corporate,
               tc_vkn: saleData.customer.tc_vkn,
               name: saleData.customer.name,
               surname: saleData.customer.surname,
               tax_office: saleData.customer.tax_office,
-              birth_date: saleData.customer.birth_date,
+              birth_date: birthDate,
               phone: saleData.customer.phone,
               email: saleData.customer.email,
               city: saleData.customer.city,
@@ -1116,13 +1118,16 @@ export class PaymentService {
           if (existingCustomer) {
             customer = existingCustomer;
           } else {
+            // birth_date boş string ise NULL yap (MySQL DATE boş string kabul etmez)
+            const bd = saleData.customer.birth_date;
+            const birthDate = (bd != null && String(bd).trim() !== '') ? saleData.customer.birth_date : null;
             customer = queryRunner.manager.create(Customer, {
               is_corporate: saleData.customer.is_corporate,
               tc_vkn: saleData.customer.tc_vkn,
               name: saleData.customer.name,
               surname: saleData.customer.surname,
               tax_office: saleData.customer.tax_office,
-              birth_date: saleData.customer.birth_date,
+              birth_date: birthDate,
               email: saleData.customer.email,
               phone: saleData.customer.phone,
               address: saleData.customer.address,
