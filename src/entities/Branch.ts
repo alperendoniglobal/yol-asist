@@ -58,6 +58,10 @@ export class Branch {
   @Column({ type: 'varchar', length: 34, nullable: true })
   iban: string | null;
 
+  /** PDF sözleşmesinde şube logosu; örn. /uploads/branch-logo/x.jpg — boşsa varsayılan Çözüm Asistan logosu */
+  @Column({ type: 'varchar', length: 512, nullable: true })
+  pdf_logo_path: string | null;
+
   @CreateDateColumn()
   created_at: Date;
 

@@ -6,9 +6,50 @@ import { AppDataSource } from '../config/database';
 import { Package } from '../entities/Package';
 import { PackageCover } from '../entities/PackageCover';
 import { VehicleService } from './VehicleService';
+import { staticFilesPath } from '../middlewares/uploadMiddleware';
 
 // SVG to PDFKit için
 const SVGtoPDF = require('svg-to-pdfkit');
+
+export type PdfPalette = {
+  primary: string;
+  primaryLight: string;
+  secondary: string;
+  accent: string;
+  success: string;
+  background: string;
+  cardBg: string;
+  border: string;
+  text: string;
+  textLight: string;
+};
+
+const DEFAULT_PDF_PALETTE: PdfPalette = {
+  primary: '#1e40af',
+  primaryLight: '#3b82f6',
+  secondary: '#64748b',
+  accent: '#0ea5e9',
+  success: '#22c55e',
+  background: '#f8fafc',
+  cardBg: '#ffffff',
+  border: '#e2e8f0',
+  text: '#1e293b',
+  textLight: '#64748b',
+};
+
+/** branches.pdf_logo_path dolu ve dosya bulunduğunda — mavi dışı nötr palet */
+const BRANCH_CUSTOM_LOGO_PALETTE: PdfPalette = {
+  primary: '#1c1917',
+  primaryLight: '#44403c',
+  secondary: '#78716c',
+  accent: '#a8a29e',
+  success: '#15803d',
+  background: '#fafaf9',
+  cardBg: '#ffffff',
+  border: '#d6d3d1',
+  text: '#1c1917',
+  textLight: '#57534e',
+};
 
 /**
  * PDF Oluşturma Servisi - Modern Tasarım
@@ -24,19 +65,28 @@ export class PdfService {
   private fontPath = path.join(process.cwd(), 'src/assets/fonts');
   private assetsPath = path.join(process.cwd(), 'src/assets');
 
-  // Renk paleti
-  private colors = {
-    primary: '#1e40af',      // Koyu mavi
-    primaryLight: '#3b82f6', // Açık mavi
-    secondary: '#64748b',    // Gri
-    accent: '#0ea5e9',       // Cyan
-    success: '#22c55e',      // Yeşil
-    background: '#f8fafc',   // Açık gri arka plan
-    cardBg: '#ffffff',       // Kart arka planı
-    border: '#e2e8f0',       // Border rengi
-    text: '#1e293b',         // Ana metin
-    textLight: '#64748b',    // Açık metin
-  };
+  /**
+   * branches.pdf_logo_path: public altındaki dosya (örn. /uploads/branch-logo/x.jpg).
+   * Express /uploads → public kökü; diskte public/branch-logo/x.jpg.
+   */
+  private resolveLogoDiskPath(stored: string | null | undefined): string | null {
+    if (stored == null || typeof stored !== 'string') return null;
+    const raw = stored.trim();
+    if (!raw || /^https?:\/\//i.test(raw)) return null;
+
+    let rel = raw.replace(/^\/+/, '');
+    if (rel.toLowerCase().startsWith('uploads/')) {
+      rel = rel.slice('uploads/'.length);
+    }
+
+    const full = path.join(staticFilesPath, rel);
+    try {
+      if (fs.existsSync(full) && fs.statSync(full).isFile()) return full;
+    } catch {
+      return null;
+    }
+    return null;
+  }
 
   /**
    * Satış için PDF sözleşme belgesi oluşturur
@@ -61,21 +111,26 @@ export class PdfService {
       order: { sort_order: 'ASC' },
     });
 
+    const customLogoDiskPath = this.resolveLogoDiskPath(sale.branch?.pdf_logo_path ?? null);
+    const palette: PdfPalette = customLogoDiskPath
+      ? { ...BRANCH_CUSTOM_LOGO_PALETTE }
+      : { ...DEFAULT_PDF_PALETTE };
+
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
-      const doc = new PDFDocument({ 
-        size: 'A4', 
+      const doc = new PDFDocument({
+        size: 'A4',
         margin: 40,
         info: {
           Title: `Yol Yardım Sözleşmesi - ${sale.id.slice(0, 8).toUpperCase()}`,
           Author: 'Çözüm Asistan',
-        }
+        },
       });
 
       // Font yükleme
       const notoRegular = path.join(this.fontPath, 'NotoSans-Regular.ttf');
       const notoBold = path.join(this.fontPath, 'NotoSans-Bold.ttf');
-      
+
       let defaultFont = 'Helvetica';
       let boldFont = 'Helvetica-Bold';
 
@@ -101,25 +156,28 @@ export class PdfService {
       let y = 40;
 
       // ==================== HEADER BANDI ====================
-      // Mavi gradient header bandı
-      doc.rect(0, 0, 595, 100).fill(this.colors.primary);
-      
-      // Acente bilgisi (logo kaldırıldı, sadece referans için)
-      
-      // Sağ üst köşe - 7/24 Çağrı Destek (header'ın sağına alındı, beyaz yazı)
-      doc.font(boldFont).fontSize(10).fillColor('#fff')
-         .text('7/24 ÇAĞRI DESTEK', 400, 8, { width: 155, align: 'right' });
-      doc.font(defaultFont).fontSize(9).fillColor('#fff')
-         .text('+90 (850) 304 54 40', 400, 20, { width: 155, align: 'right' });
+      doc.rect(0, 0, 595, 100).fill(palette.primary);
 
-      // Sol taraf - Çözüm Asistan logosu kutusu
+      doc.font(boldFont).fontSize(10).fillColor('#fff')
+        .text('7/24 ÇAĞRI DESTEK', 400, 8, { width: 155, align: 'right' });
+      doc.font(defaultFont).fontSize(9).fillColor('#fff')
+        .text('+90 (850) 304 54 40', 400, 20, { width: 155, align: 'right' });
+
       doc.roundedRect(30, 35, 200, 60, 5).fill('#fff');
-      
-      // Önce cozumasistanlog.svg'nin PNG versiyonunu kullan (aynı tasarım, PDF'te çizilebilir)
-      // PNG: npm run generate-logo-png ile üretilir (SVG içindeki gömülü görsel mavi tonlanır)
+
       const logoPngPath = path.join(this.assetsPath, 'cozumasistanlog.png');
       let logoDrawn = false;
-      if (fs.existsSync(logoPngPath)) {
+
+      if (customLogoDiskPath) {
+        try {
+          doc.image(customLogoDiskPath, 40, 45, { fit: [180, 45], align: 'center', valign: 'center' });
+          logoDrawn = true;
+        } catch (e) {
+          console.error('Şube PDF logosu hatası:', e);
+        }
+      }
+
+      if (!logoDrawn && fs.existsSync(logoPngPath)) {
         try {
           doc.image(logoPngPath, 40, 45, { width: 180, height: 45 });
           logoDrawn = true;
@@ -127,103 +185,92 @@ export class PdfService {
           console.error('Logo PNG hatası:', e);
         }
       }
-      // PNG yoksa vektör logo (cozumasistanlogaa.svg) yedek olarak kullanılır
+
       if (!logoDrawn) {
         const logoSvgPath = path.join(this.assetsPath, 'cozumasistanlogaa.svg');
         if (fs.existsSync(logoSvgPath)) {
           try {
             const svgContent = fs.readFileSync(logoSvgPath, 'utf8');
-            const svgBlue = svgContent.replace(/fill:\s*#fff/g, 'fill: #1e40af');
-            SVGtoPDF(doc, svgBlue, 40, 45, { width: 180, height: 45 });
+            const svgColored = svgContent.replace(/fill:\s*#fff/gi, `fill: ${palette.primary}`);
+            SVGtoPDF(doc, svgColored, 40, 45, { width: 180, height: 45 });
             logoDrawn = true;
           } catch (e) {
             console.error('Logo SVG hatası:', e);
           }
         }
       }
-      
-      // Logo çizilemezse metin olarak yaz
+
       if (!logoDrawn) {
-        doc.font(boldFont).fontSize(18).fillColor(this.colors.primary).text('ÇÖZÜM ASİSTAN', 45, 50);
-        doc.font(defaultFont).fontSize(8).fillColor(this.colors.textLight).text('Yol Yardım Hizmetleri', 45, 70);
+        doc.font(boldFont).fontSize(18).fillColor(palette.primary).text('ÇÖZÜM ASİSTAN', 45, 50);
+        doc.font(defaultFont).fontSize(8).fillColor(palette.textLight).text('Yol Yardım Hizmetleri', 45, 70);
       }
 
       y = 115;
 
-      // ==================== ANA İÇERİK ====================
       const customer = sale.customer;
       const vehicle = sale.vehicle;
-      // agency zaten yukarıda tanımlı (satır 101)
-      const branch = sale.branch;
-      const user = sale.user;
       const pkg = sale.package;
 
-      // İki sütunlu layout
       const col1X = 40;
       const col2X = 300;
       const cardWidth = 240;
 
-      // ---------- MÜŞTERİ BİLGİLERİ KARTI ----------
-      this.drawCard(doc, col1X, y, cardWidth, 130, 'HİZMET ALAN ÜYE BİLGİLERİ ', boldFont);
+      this.drawCard(doc, col1X, y, cardWidth, 130, 'HİZMET ALAN ÜYE BİLGİLERİ ', boldFont, palette);
       let cardY = y + 30;
-      doc.font(defaultFont).fontSize(9).fillColor(this.colors.text);
-      
+      doc.font(defaultFont).fontSize(9).fillColor(palette.text);
+
       if (customer) {
         if (customer.is_corporate) {
-          this.drawFieldInline(doc, col1X + 10, cardY, 'Ünvan', customer.name, defaultFont);
+          this.drawFieldInline(doc, col1X + 10, cardY, 'Ünvan', customer.name, defaultFont, palette);
           cardY += 15;
-          this.drawFieldInline(doc, col1X + 10, cardY, 'Vergi No', customer.tc_vkn, defaultFont);
+          this.drawFieldInline(doc, col1X + 10, cardY, 'Vergi No', customer.tc_vkn, defaultFont, palette);
           cardY += 15;
-          this.drawFieldInline(doc, col1X + 10, cardY, 'Vergi Dairesi', customer.tax_office || '-', defaultFont);
+          this.drawFieldInline(doc, col1X + 10, cardY, 'Vergi Dairesi', customer.tax_office || '-', defaultFont, palette);
         } else {
-          this.drawFieldInline(doc, col1X + 10, cardY, 'Ad Soyad', `${customer.name} ${customer.surname || ''}`, defaultFont);
+          this.drawFieldInline(doc, col1X + 10, cardY, 'Ad Soyad', `${customer.name} ${customer.surname || ''}`, defaultFont, palette);
           cardY += 15;
-          this.drawFieldInline(doc, col1X + 10, cardY, 'T.C. Kimlik', customer.tc_vkn, defaultFont);
+          this.drawFieldInline(doc, col1X + 10, cardY, 'T.C. Kimlik', customer.tc_vkn, defaultFont, palette);
           cardY += 15;
-          this.drawFieldInline(doc, col1X + 10, cardY, 'Doğum Tarihi', customer.birth_date ? this.formatDate(customer.birth_date) : '-', defaultFont);
+          this.drawFieldInline(doc, col1X + 10, cardY, 'Doğum Tarihi', customer.birth_date ? this.formatDate(customer.birth_date) : '-', defaultFont, palette);
         }
         cardY += 15;
-        this.drawFieldInline(doc, col1X + 10, cardY, 'Telefon', customer.phone, defaultFont);
+        this.drawFieldInline(doc, col1X + 10, cardY, 'Telefon', customer.phone, defaultFont, palette);
         cardY += 15;
-        this.drawFieldInline(doc, col1X + 10, cardY, 'E-Posta', customer.email || '-', defaultFont);
+        this.drawFieldInline(doc, col1X + 10, cardY, 'E-Posta', customer.email || '-', defaultFont, palette);
         cardY += 15;
         if (customer.city) {
-          this.drawFieldInline(doc, col1X + 10, cardY, 'Adres', `${customer.district || ''} / ${customer.city}`, defaultFont);
+          this.drawFieldInline(doc, col1X + 10, cardY, 'Adres', `${customer.district || ''} / ${customer.city}`, defaultFont, palette);
         }
       }
 
-      // ---------- ARAÇ BİLGİLERİ KARTI ----------
-      this.drawCard(doc, col2X, y, cardWidth, 130, 'ARAÇ BİLGİLERİ', boldFont);
+      this.drawCard(doc, col2X, y, cardWidth, 130, 'ARAÇ BİLGİLERİ', boldFont, palette);
       cardY = y + 30;
-      
+
       if (vehicle) {
         const brandName = vehicle.brand?.name || '-';
         const modelName = vehicle.model?.name || '-';
-        
-        this.drawFieldInline(doc, col2X + 10, cardY, 'Plaka', vehicle.plate + (vehicle.is_foreign_plate ? ' (Yabancı)' : ''), defaultFont);
+
+        this.drawFieldInline(doc, col2X + 10, cardY, 'Plaka', vehicle.plate + (vehicle.is_foreign_plate ? ' (Yabancı)' : ''), defaultFont, palette);
         cardY += 15;
-        this.drawFieldInline(doc, col2X + 10, cardY, 'Marka', brandName, defaultFont);
+        this.drawFieldInline(doc, col2X + 10, cardY, 'Marka', brandName, defaultFont, palette);
         cardY += 15;
-        this.drawFieldInline(doc, col2X + 10, cardY, 'Model', modelName.length > 18 ? modelName.slice(0, 18) + '...' : modelName, defaultFont);
+        this.drawFieldInline(doc, col2X + 10, cardY, 'Model', modelName.length > 18 ? modelName.slice(0, 18) + '...' : modelName, defaultFont, palette);
         cardY += 15;
-        this.drawFieldInline(doc, col2X + 10, cardY, 'Model Yılı', vehicle.model_year.toString(), defaultFont);
+        this.drawFieldInline(doc, col2X + 10, cardY, 'Model Yılı', vehicle.model_year.toString(), defaultFont, palette);
         cardY += 15;
-        this.drawFieldInline(doc, col2X + 10, cardY, 'Kullanım', this.getUsageTypeLabel(vehicle.usage_type), defaultFont);
+        this.drawFieldInline(doc, col2X + 10, cardY, 'Kullanım', this.getUsageTypeLabel(vehicle.usage_type), defaultFont, palette);
         if (vehicle.registration_serial) {
           cardY += 15;
-          this.drawFieldInline(doc, col2X + 10, cardY, 'Ruhsat', `${vehicle.registration_serial} / ${vehicle.registration_number || ''}`, defaultFont);
+          this.drawFieldInline(doc, col2X + 10, cardY, 'Ruhsat', `${vehicle.registration_serial} / ${vehicle.registration_number || ''}`, defaultFont, palette);
         }
       }
 
       y += 145;
 
-      // ---------- SATIŞ BİLGİLERİ KARTI (Kaynak bilgileri kaldırıldığı için buraya taşındı) ----------
-      // Başlangıç ve bitiş tarihleri PDF'de 1 hafta sonrası gösterilir (gerçek tarih + 7 gün)
       const startDateDisplay = new Date(sale.start_date);
       startDateDisplay.setDate(startDateDisplay.getDate() + 7);
       const endDateDisplay = new Date(sale.end_date);
       endDateDisplay.setDate(endDateDisplay.getDate() + 7);
-      // Tanzim de +7 gün gösterilir (Tanzim, Başlangıç, Bitiş hepsi 7 gün sonrası)
       const tanzimDate = sale.created_at instanceof Date
         ? new Date(sale.created_at)
         : sale.created_at
@@ -231,13 +278,12 @@ export class PdfService {
           : new Date();
       tanzimDate.setDate(tanzimDate.getDate() + 7);
 
-      // İkinci satır kartları: SATIŞ ve PAKET aynı yükseklikte (üstteki MÜŞTERİ/ARAÇ kartlarıyla uyumlu)
       const coversHeight = 30 + (covers.length * 14) + 30;
       const secondRowCardHeight = Math.max(130, coversHeight);
 
-      this.drawCard(doc, col1X, y, cardWidth, secondRowCardHeight, 'HİZMET BİLGİLERİ', boldFont);
+      this.drawCard(doc, col1X, y, cardWidth, secondRowCardHeight, 'HİZMET BİLGİLERİ', boldFont, palette);
       cardY = y + 30;
-      doc.font(defaultFont).fontSize(9).fillColor(this.colors.text);
+      doc.font(defaultFont).fontSize(9).fillColor(palette.text);
       doc.text(`Hizmet No: ${sale.id.slice(0, 8).toUpperCase()}`, col1X + 10, cardY);
       cardY += 15;
       doc.text(`Tanzim: ${this.formatDateTime(tanzimDate)}`, col1X + 10, cardY);
@@ -246,23 +292,21 @@ export class PdfService {
       cardY += 15;
       doc.text(`Bitiş: ${this.formatDateTime(endDateDisplay)}`, col1X + 10, cardY);
 
-      // ---------- PAKET BİLGİLERİ KARTI ----------
-      this.drawCard(doc, col2X, y, cardWidth, secondRowCardHeight, 'PAKET BİLGİLERİ', boldFont);
+      this.drawCard(doc, col2X, y, cardWidth, secondRowCardHeight, 'PAKET BİLGİLERİ', boldFont, palette);
       cardY = y + 30;
-      
+
       if (pkg) {
-        doc.font(boldFont).fontSize(10).fillColor(this.colors.primary)
-           .text(pkg.name, col2X + 10, cardY);
+        doc.font(boldFont).fontSize(10).fillColor(palette.primary)
+          .text(pkg.name, col2X + 10, cardY);
         cardY += 16;
-        doc.font(defaultFont).fontSize(8).fillColor(this.colors.textLight)
-           .text(`${pkg.vehicle_type} | Maks. ${pkg.max_vehicle_age} yaş`, col2X + 10, cardY);
+        doc.font(defaultFont).fontSize(8).fillColor(palette.textLight)
+          .text(`${pkg.vehicle_type} | Maks. ${pkg.max_vehicle_age} yaş`, col2X + 10, cardY);
         cardY += 20;
 
-        // Paket kapsamları
-        doc.font(defaultFont).fontSize(8).fillColor(this.colors.text);
+        doc.font(defaultFont).fontSize(8).fillColor(palette.text);
         for (const cover of covers) {
-          const limitText = Number(cover.limit_amount) > 0 
-            ? ` (${this.formatCurrency(Number(cover.limit_amount))} TL)` 
+          const limitText = Number(cover.limit_amount) > 0
+            ? ` (${this.formatCurrency(Number(cover.limit_amount))} TL)`
             : '';
           doc.text(`• ${cover.usage_count}x ${cover.title}${limitText}`, col2X + 10, cardY, { width: cardWidth - 20 });
           cardY += 12;
@@ -271,55 +315,45 @@ export class PdfService {
 
       y += secondRowCardHeight + 15;
 
-      // ==================== FİYAT TABLOSU ====================
-      // Tam genişlikte fiyat kartı
       doc.roundedRect(col1X, y, pageWidth, 60, 5)
-         .fillAndStroke(this.colors.background, this.colors.border);
-      
-      // Başlık bandı
-      doc.rect(col1X, y, pageWidth, 22).fill(this.colors.primary);
-      doc.font(boldFont).fontSize(10).fillColor('#fff')
-         .text('FİYAT BİLGİSİ', col1X + 15, y + 6);
+        .fillAndStroke(palette.background, palette.border);
 
-      // Fiyat değerleri
+      doc.rect(col1X, y, pageWidth, 22).fill(palette.primary);
+      doc.font(boldFont).fontSize(10).fillColor('#fff')
+        .text('FİYAT BİLGİSİ', col1X + 15, y + 6);
+
       const price = Number(sale.price) || 0;
       const kdvRate = 0.20;
       const netPrice = price / (1 + kdvRate);
       const kdv = price - netPrice;
 
-      doc.font(defaultFont).fontSize(9).fillColor(this.colors.text);
+      doc.font(defaultFont).fontSize(9).fillColor(palette.text);
       const priceY = y + 32;
-      
-      // Net Tutar
+
       doc.text('Net Tutar:', col1X + 15, priceY);
       doc.font(boldFont).text(`${this.formatCurrency(netPrice)} TL`, col1X + 80, priceY);
-      
-      // KDV
+
       doc.font(defaultFont).text('KDV (%20):', col1X + 180, priceY);
       doc.font(boldFont).text(`${this.formatCurrency(kdv)} TL`, col1X + 245, priceY);
-      
-      // Toplam
+
       doc.font(defaultFont).text('TOPLAM:', col1X + 350, priceY);
-      doc.font(boldFont).fontSize(12).fillColor(this.colors.primary)
-         .text(`${this.formatCurrency(price)} TL`, col1X + 410, priceY - 2);
+      doc.font(boldFont).fontSize(12).fillColor(palette.primary)
+        .text(`${this.formatCurrency(price)} TL`, col1X + 410, priceY - 2);
 
       y += 75;
 
-      // ==================== ALT BİLGİ ====================
-      doc.font(defaultFont).fontSize(7).fillColor(this.colors.textLight)
-         .text('Hizmetimiz Türkiye genelinde 7/24 sağlanmaktadır. Detaylı bilgi için sözleşme şartlarını inceleyiniz.', col1X, y, { width: pageWidth, align: 'center' });
+      doc.font(defaultFont).fontSize(7).fillColor(palette.textLight)
+        .text('Hizmetimiz Türkiye genelinde 7/24 sağlanmaktadır. Detaylı bilgi için sözleşme şartlarını inceleyiniz.', col1X, y, { width: pageWidth, align: 'center' });
 
-      // ==================== SAYFA 2 - HİZMET ŞARTLARI ====================
       doc.addPage();
       y = 40;
 
-      // Başlık bandı
-      doc.rect(0, 0, 595, 50).fill(this.colors.primary);
+      doc.rect(0, 0, 595, 50).fill(palette.primary);
       doc.font(boldFont).fontSize(16).fillColor('#fff')
-         .text('HİZMET ŞARTLARI VE KOŞULLARI', 40, 18);
+        .text('HİZMET ŞARTLARI VE KOŞULLARI', 40, 18);
 
       y = 65;
-      doc.font(defaultFont).fontSize(9).fillColor(this.colors.text);
+      doc.font(defaultFont).fontSize(9).fillColor(palette.text);
 
       const terms = [
         { title: 'HİZMET TANIMLARI', items: [
@@ -355,100 +389,102 @@ export class PdfService {
       ];
 
       for (const section of terms) {
-        // Bölüm başlığı
-        doc.font(boldFont).fontSize(10).fillColor(this.colors.primary)
-           .text(section.title, 40, y);
+        doc.font(boldFont).fontSize(10).fillColor(palette.primary)
+          .text(section.title, 40, y);
         y += 18;
 
-        // Bölüm içeriği
-        doc.font(defaultFont).fontSize(8).fillColor(this.colors.text);
+        doc.font(defaultFont).fontSize(8).fillColor(palette.text);
         for (const item of section.items) {
           const textHeight = doc.heightOfString(`• ${item}`, { width: pageWidth - 20 });
           doc.text(`• ${item}`, 50, y, { width: pageWidth - 20 });
           y += textHeight + 4;
         }
-        
-        // KAPSAM DIŞI DURUMLAR ve SÖZLEŞME İPTAL ŞARTLARI bölümlerinin sonuna özel metin ekle
+
         if (section.title === 'KAPSAM DIŞI DURUMLAR' || section.title === 'SÖZLEŞME İPTAL ŞARTLARI') {
           y += 8;
-          doc.font(defaultFont).fontSize(8).fillColor(this.colors.text)
-             .text('Yukarıdaki maddeler sözleşme tarafları arasında peşinen kabul edilmiştir.', 50, y, { width: pageWidth - 20 });
+          doc.font(defaultFont).fontSize(8).fillColor(palette.text)
+            .text('Yukarıdaki maddeler sözleşme tarafları arasında peşinen kabul edilmiştir.', 50, y, { width: pageWidth - 20 });
           y += 12;
         }
-        
+
         y += 12;
-        
-        // Sayfa sonu kontrolü - eğer sayfa doluyorsa yeni sayfa ekle
+
         if (y > 750) {
           doc.addPage();
           y = 40;
         }
       }
 
-      // ==================== FOOTER ====================
-      doc.font(defaultFont).fontSize(8).fillColor(this.colors.textLight)
-         .text('Bu belge elektronik ortamda oluşturulmuştur.', 40, 770, { width: pageWidth, align: 'center' })
-         .text(`Oluşturma Tarihi: ${this.formatDateTime(new Date())}`, 40, 782, { width: pageWidth, align: 'center' });
+      doc.font(defaultFont).fontSize(8).fillColor(palette.textLight)
+        .text('Bu belge elektronik ortamda oluşturulmuştur.', 40, 770, { width: pageWidth, align: 'center' })
+        .text(`Oluşturma Tarihi: ${this.formatDateTime(new Date())}`, 40, 782, { width: pageWidth, align: 'center' });
 
       doc.end();
     });
   }
 
-  // Yardımcı fonksiyon: Kart çizimi
-  private drawCard(doc: any, x: number, y: number, width: number, height: number, title: string, boldFont: string) {
-    // Kart arka planı
+  private drawCard(
+    doc: any,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    title: string,
+    boldFont: string,
+    palette: PdfPalette
+  ) {
     doc.roundedRect(x, y, width, height, 5)
-       .fillAndStroke(this.colors.cardBg, this.colors.border);
-    
-    // Başlık bandı
-    doc.rect(x, y, width, 22).fill(this.colors.primary);
-    doc.roundedRect(x, y, width, 22, 5).fill(this.colors.primary);
-    // Üst köşeleri yuvarlat, alt köşeler düz
-    doc.rect(x, y + 10, width, 12).fill(this.colors.primary);
-    
-    // Başlık metni
+      .fillAndStroke(palette.cardBg, palette.border);
+
+    doc.rect(x, y, width, 22).fill(palette.primary);
+    doc.roundedRect(x, y, width, 22, 5).fill(palette.primary);
+    doc.rect(x, y + 10, width, 12).fill(palette.primary);
+
     doc.font(boldFont).fontSize(9).fillColor('#fff')
-       .text(title, x + 10, y + 6);
+      .text(title, x + 10, y + 6);
   }
 
-  // Yardımcı fonksiyon: Tek satırda label: value formatında yazma
-  private drawFieldInline(doc: any, x: number, y: number, label: string, value: string, font: string) {
-    doc.font(font).fontSize(9).fillColor(this.colors.textLight)
-       .text(`${label}: `, x, y, { continued: true })
-       .fillColor(this.colors.text)
-       .text(value);
+  private drawFieldInline(
+    doc: any,
+    x: number,
+    y: number,
+    label: string,
+    value: string,
+    font: string,
+    palette: PdfPalette
+  ) {
+    doc.font(font).fontSize(9).fillColor(palette.textLight)
+      .text(`${label}: `, x, y, { continued: true })
+      .fillColor(palette.text)
+      .text(value);
   }
 
-  // Tarih formatlama
   private formatDate(date: Date | string): string {
     const d = new Date(date);
     return d.toLocaleDateString('tr-TR', {
       day: '2-digit',
       month: '2-digit',
-      year: 'numeric'
+      year: 'numeric',
     });
   }
 
-  // Tarih-saat formatlama
   private formatDateTime(date: Date): string {
     return date.toLocaleString('tr-TR', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
     });
   }
 
-  // Para formatlama
   private formatCurrency(value: number): string {
     return value.toLocaleString('tr-TR', {
       minimumFractionDigits: 2,
-      maximumFractionDigits: 2
+      maximumFractionDigits: 2,
     });
   }
 
-  // Kullanım tarzı etiketi
   private getUsageTypeLabel(type: string): string {
     switch (type) {
       case 'PRIVATE': return 'Hususi';
