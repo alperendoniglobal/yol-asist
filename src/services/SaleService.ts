@@ -78,12 +78,11 @@ export class SaleService {
   private packageRepository = AppDataSource.getRepository(Package);
   private vehicleService = new VehicleService();
 
-  /** KDV oranı (%20) - Komisyon KDV hariç net fiyat üzerinden hesaplanır */
+  /** KDV oranı (%20) - İade hesaplarında kullanılır */
   private static readonly KDV_RATE = 0.20;
 
   /**
-   * KDV dahil fiyattan net fiyat (KDV hariç) hesaplar.
-   * Komisyon net fiyat üzerinden hesaplanır; KDV komisyona dahil edilmez.
+   * KDV dahil fiyattan net fiyat (KDV hariç) hesaplar — yalnızca iade hesapları için.
    * @param priceWithVat - KDV dahil satış fiyatı (TL)
    * @returns KDV hariç net fiyat (TL)
    */
@@ -277,20 +276,18 @@ export class SaleService {
 
   /**
    * Komisyon tutarını hesaplar.
-   * Önce KDV düşülür (net fiyat = fiyat / 1.20), komisyon net fiyat üzerinden hesaplanır.
-   * Örnek: 1000 TL satış, %40 komisyon → net 833.33 TL, komisyon 333.33 TL (400 TL değil).
+   * KDV dahil satış fiyatı üzerinden: 1000 TL × %30 = 300 TL.
    * @param price - KDV dahil satış fiyatı (TL)
    * @param commissionRate - Komisyon oranı (%)
    * @returns Komisyon tutarı (TL)
    */
   calculateCommission(price: number, commissionRate: number): number {
-    const netPrice = this.getNetPrice(price);
-    return (netPrice * commissionRate) / 100;
+    return (price * commissionRate) / 100;
   }
 
   /**
    * Dağılımlı komisyon hesaplar.
-   * Komisyon KDV hariç net fiyat üzerinden hesaplanır: önce net = fiyat / 1.20, sonra komisyon = net × oran / 100.
+   * Komisyon KDV dahil satış fiyatı üzerinden: fiyat × oran / 100.
    * Şube varsa: Şube kendi komisyonunu alır, kalan kısım acenteye gider. Şube yoksa: Sadece acente komisyonu.
    * @param price - KDV dahil satış fiyatı (TL)
    * @param branchId - Şube ID (opsiyonel)
@@ -306,9 +303,6 @@ export class SaleService {
     agency_commission: number | null;
     total_commission: number;
   }> {
-    // Komisyon KDV hariç net fiyat üzerinden hesaplanır (1000 TL → net 833.33 TL, sonra oran uygulanır)
-    const netPrice = this.getNetPrice(price);
-
     // 1. Şube varsa: Dağılımlı komisyon hesapla
     if (branchId) {
       const branch = await this.branchRepository.findOne({ where: { id: branchId } });
@@ -334,14 +328,9 @@ export class SaleService {
         throw new AppError(400, `Şube komisyon oranı (${branchRate}%) acente komisyon oranından (${agencyRate}%) fazla olamaz`);
       }
 
-      // Şube komisyonu = netPrice × branch_rate / 100
-      const branchCommission = (netPrice * branchRate) / 100;
-
-      // Acente komisyonu = netPrice × (agency_rate - branch_rate) / 100
-      const agencyCommission = (netPrice * (agencyRate - branchRate)) / 100;
-
-      // Toplam = netPrice × agency_rate / 100
-      const totalCommission = (netPrice * agencyRate) / 100;
+      const branchCommission = (price * branchRate) / 100;
+      const agencyCommission = (price * (agencyRate - branchRate)) / 100;
+      const totalCommission = (price * agencyRate) / 100;
 
       return {
         branch_commission: branchCommission,
@@ -350,7 +339,7 @@ export class SaleService {
       };
     }
 
-    // 2. Şube yoksa ama acente varsa: Sadece acente komisyonu (net fiyat üzerinden)
+    // 2. Şube yoksa ama acente varsa: Sadece acente komisyonu
     if (agencyId) {
       const agency = await this.agencyRepository.findOne({ where: { id: agencyId } });
       if (!agency) {
@@ -358,7 +347,7 @@ export class SaleService {
       }
 
       const agencyRate = Number(agency.commission_rate);
-      const agencyCommission = (netPrice * agencyRate) / 100;
+      const agencyCommission = (price * agencyRate) / 100;
 
       return {
         branch_commission: null,
@@ -367,9 +356,9 @@ export class SaleService {
       };
     }
 
-    // 3. İkisi de yoksa: Varsayılan %20 (net fiyat üzerinden)
+    // 3. İkisi de yoksa: Varsayılan %20 (KDV dahil fiyat üzerinden)
     const defaultRate = 20;
-    const defaultCommission = (netPrice * defaultRate) / 100;
+    const defaultCommission = (price * defaultRate) / 100;
 
     return {
       branch_commission: null,

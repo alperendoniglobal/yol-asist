@@ -7,6 +7,7 @@ import { UserAgency } from '../entities/UserAgency';
 import { AppError } from '../middlewares/errorHandler';
 import { applyTenantFilter } from '../middlewares/tenantMiddleware';
 import { CommissionRequestStatus, UserRole, PaymentType, PaymentStatus } from '../types/enums';
+import { getAgencyRowDisplayEarned, getBranchRowDisplayEarned } from '../utils/commissionDisplay';
 
 export class CommissionService {
   private commissionRepository = AppDataSource.getRepository(CommissionRequest);
@@ -190,6 +191,8 @@ export class CommissionService {
     branchId: string | null;
     branchName: string | null;
     totalEarned: number;
+    totalEarnedDisplay: number;
+    legacyMismatchCount: number;
     totalPaid: number;
     balance: number;
     balancePaidCount: number;
@@ -220,6 +223,8 @@ export class CommissionService {
       branchId: string | null;
       branchName: string | null;
       totalEarned: number;
+      totalEarnedDisplay: number;
+      legacyMismatchCount: number;
       totalPaid: number;
       balance: number;
       balancePaidCount: number;
@@ -254,12 +259,16 @@ export class CommissionService {
         .addSelect('COALESCE(SUM(sale.price), 0)', 'total')
         .getRawOne<{ count: string; total: string }>();
 
+      const agencyDisplay = await getAgencyRowDisplayEarned(this.saleRepository, agency.id);
+
       rows.push({
         agencyId: agency.id,
         agencyName: agency.name,
         branchId: null,
         branchName: null,
         totalEarned: parseFloat(agencyEarnedRaw?.total || '0') || 0,
+        totalEarnedDisplay: agencyDisplay.displayTotal,
+        legacyMismatchCount: agencyDisplay.mismatchCount,
         totalPaid: parseFloat(agencyPaidRaw?.total || '0') || 0,
         balance: parseFloat(agency.balance?.toString() || '0') || 0,
         balancePaidCount: parseInt(agencyBalancePaidRaw?.count || '0', 10) || 0,
@@ -297,12 +306,16 @@ export class CommissionService {
           .addSelect('COALESCE(SUM(sale.price), 0)', 'total')
           .getRawOne<{ count: string; total: string }>();
 
+        const branchDisplay = await getBranchRowDisplayEarned(this.saleRepository, branch.id);
+
         rows.push({
           agencyId: agency.id,
           agencyName: agency.name,
           branchId: branch.id,
           branchName: branch.name,
           totalEarned: parseFloat(branchEarnedRaw?.total || '0') || 0,
+          totalEarnedDisplay: branchDisplay.displayTotal,
+          legacyMismatchCount: branchDisplay.mismatchCount,
           totalPaid: parseFloat(branchPaidRaw?.total || '0') || 0,
           balance: parseFloat(branch.balance?.toString() || '0') || 0,
           balancePaidCount: parseInt(branchBalancePaidRaw?.count || '0', 10) || 0,

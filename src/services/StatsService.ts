@@ -14,6 +14,13 @@ import { IsNull } from 'typeorm';
 import { applyTenantFilter, applyAgencyFilter } from '../middlewares/tenantMiddleware';
 import { UserRole, PaymentType, PaymentStatus } from '../types/enums';
 import { CommissionService } from './CommissionService';
+import {
+  CommissionDisplayScope,
+  buildLegacyWarning,
+  getAgencyRowDisplayEarned,
+  getBranchRowDisplayEarned,
+  getCommissionDisplayMetrics,
+} from '../utils/commissionDisplay';
 
 export class StatsService {
   private saleRepository = AppDataSource.getRepository(Sale);
@@ -53,7 +60,7 @@ export class StatsService {
 
     const [
       totalSales,
-      totalCustomers,
+      totalCustomersFromRegistry,
       totalRevenue,
       totalCommission,
     ] = await Promise.all([
@@ -62,6 +69,19 @@ export class StatsService {
       salesQb.clone().select('SUM(sale.price)', 'total').getRawOne(),
       salesQb.clone().select(`SUM(${commissionColumn})`, 'total').getRawOne(),
     ]);
+
+    // Şube/acente satışlarında müşteri kaydı çoğu zaman branch_id'siz tutuluyor (mevcut müşteri tekrar kullanımı).
+    // Şube dashboard'unda kayıt sayısı yerine satışlardaki benzersiz müşteri sayısı gösterilir.
+    let totalCustomers = totalCustomersFromRegistry;
+    if (filter?.branch_id) {
+      const distinctCustomersQb = this.saleRepository
+        .createQueryBuilder('sale')
+        .select('COUNT(DISTINCT COALESCE(sale.customer_id, sale.user_customer_id))', 'count')
+        .where('COALESCE(sale.customer_id, sale.user_customer_id) IS NOT NULL');
+      applyTenantFilter(distinctCustomersQb, filter, 'sale', 'user_id');
+      const distinctCustomersRaw = await distinctCustomersQb.getRawOne<{ count: string }>();
+      totalCustomers = parseInt(distinctCustomersRaw?.count || '0', 10) || 0;
+    }
 
     // Son satışları getir
     const recentSalesQb = this.saleRepository
@@ -279,11 +299,41 @@ export class StatsService {
       commissionSummary = commissionSummary.filter((row: any) => row.branchId === currentUser.branch_id);
     }
 
+    const commissionScope: CommissionDisplayScope =
+      filter?.branch_id ? 'branch' : filter?.agency_id ? 'agency' : 'total';
+    const commissionDisplay = await getCommissionDisplayMetrics(
+      this.saleRepository,
+      filter,
+      commissionScope
+    );
+
+    let entityName = 'Hesabınız';
+    if (filter?.branch_id) {
+      const branch = await this.branchRepository.findOne({
+        where: { id: filter.branch_id as string },
+        select: ['name'],
+      });
+      entityName = branch?.name || entityName;
+    } else if (filter?.agency_id) {
+      const agency = await this.agencyRepository.findOne({
+        where: { id: filter.agency_id as string },
+        select: ['name'],
+      });
+      entityName = agency?.name || entityName;
+    }
+
+    const commissionLegacyWarning = buildLegacyWarning(
+      { mismatchedSaleCount: commissionDisplay.mismatchedSaleCount },
+      { entityName, scope: commissionScope }
+    );
+
     return {
       totalSales,
       totalCustomers,
       totalRevenue: parseFloat(totalRevenue?.total || '0'),
       totalCommission: parseFloat(totalCommission?.total || '0'),
+      totalCommissionDisplay: commissionDisplay.displayTotal,
+      commissionLegacyWarning,
       recentSales,
       dailySales,           // Son 7 günün günlük satışları
       monthlySales,         // Aylık satışlar (opsiyonel)
