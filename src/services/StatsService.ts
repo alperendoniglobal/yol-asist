@@ -195,6 +195,7 @@ export class StatsService {
 
     const topPackagesRaw = await topPackagesQb
       .groupBy('package.id')
+      .addGroupBy('package.name')
       .orderBy('count', 'DESC')
       .limit(6)
       .getRawMany();
@@ -233,6 +234,7 @@ export class StatsService {
       
       const agencyPerformanceRaw = await agencyPerformanceQb
         .groupBy('agency.id')
+        .addGroupBy('agency.name')
         .orderBy('totalRevenue', 'DESC')
         .limit(10)
         .getRawMany();
@@ -378,6 +380,7 @@ export class StatsService {
       .addSelect('COUNT(sale.id)', 'count')
       .addSelect('SUM(sale.price)', 'revenue')
       .groupBy('package.id')
+      .addGroupBy('package.name')
       .orderBy('count', 'DESC')
       .getRawMany();
 
@@ -463,6 +466,7 @@ export class StatsService {
       .addSelect('SUM(sale.price)', 'totalRevenue')
       .addSelect('SUM(sale.commission)', 'totalCommission')
       .groupBy('agency.id')
+      .addGroupBy('agency.name')
       .orderBy('totalRevenue', 'DESC')
       .getRawMany();
 
@@ -561,6 +565,7 @@ export class StatsService {
       .addSelect('SUM(sale.price)', 'revenue')
       .addSelect('SUM(sale.commission)', 'commission')
       .groupBy('branch.id')
+      .addGroupBy('branch.name')
       .orderBy('revenue', 'DESC')
       .getRawMany();
 
@@ -587,6 +592,10 @@ export class StatsService {
       .addSelect('SUM(sale.price)', 'revenue')
       .addSelect('SUM(sale.commission)', 'commission')
       .groupBy('user.id')
+      .addGroupBy('user.name')
+      .addGroupBy('user.surname')
+      .addGroupBy('user.email')
+      .addGroupBy('user.role')
       .orderBy('revenue', 'DESC')
       .getRawMany();
 
@@ -611,6 +620,8 @@ export class StatsService {
       .addSelect('SUM(sale.price)', 'revenue')
       .addSelect('SUM(sale.commission)', 'commission')
       .groupBy('package.id')
+      .addGroupBy('package.name')
+      .addGroupBy('package.vehicle_type')
       .orderBy('count', 'DESC')
       .getRawMany();
 
@@ -638,7 +649,10 @@ export class StatsService {
       .addSelect('SUM(sale.price)', 'revenue')
       .addSelect('SUM(sale.commission)', 'commission')
       .groupBy('user.id')
+      .addGroupBy('user.name')
+      .addGroupBy('user.surname')
       .addGroupBy('package.id')
+      .addGroupBy('package.name')
       .orderBy('count', 'DESC')
       .getRawMany();
 
@@ -1018,30 +1032,17 @@ export class StatsService {
       .addSelect('COUNT(sale.id)', 'saleCount')
       .where('vehicle.model_year IS NOT NULL')
       .groupBy('vehicle.model_year')
+      .addGroupBy(`(${currentYear} - vehicle.model_year)`)
       .orderBy('saleCount', 'DESC')
       .limit(20)
       .getRawMany();
 
-    // 6. Şehir bazlı müşteri ve satış dağılımı
-    // Hem Customer hem de UserCustomer'dan şehir bilgilerini al
-    // Direkt tablo join'leri kullan
-    const cityDistribution = await this.saleRepository
-      .createQueryBuilder('sale')
-      .leftJoin('customers', 'customer', 'sale.customer_id = customer.id')
-      .leftJoin('user_customers', 'userCustomer', 'sale.user_customer_id = userCustomer.id')
-      .select(
-        `COALESCE(NULLIF(customer.city, ''), NULLIF(userCustomer.city, ''), 'Belirtilmemiş')`,
-        'city'
-      )
-      .addSelect('COUNT(sale.id)', 'saleCount')
-      .addSelect('COUNT(DISTINCT COALESCE(customer.id, userCustomer.id))', 'customerCount')
-      .addSelect('COALESCE(SUM(sale.price), 0)', 'totalRevenue')
-      .groupBy('city')
-      .orderBy('saleCount', 'DESC')
-      .getRawMany();
-
-    // Şehir isimlerini plaka numaralarına çevir (Türkiye haritası için)
-    // Türkiye'deki şehirlerin plaka numaraları mapping'i
+    // 6. Şehir bazlı satış dağılımı — müşteri ili
+    // Öncelik: Customer / UserCustomer / araç müşterisi city
+    // Sonra: payments.payment_details.sale_data.customer.city
+    //        (bu DB'de sale.customer_id ve payment.sale_id çoğu zaman boş;
+    //         paket+tarih+fiyat ile eşleştirilir)
+    // Şube/acente adresi KULLANILMAZ (ofis ili ≠ müşteri ili).
     const cityPlateMapping: Record<string, number> = {
       'Adana': 1, 'Adıyaman': 2, 'Afyonkarahisar': 3, 'Ağrı': 4, 'Amasya': 5,
       'Ankara': 6, 'Antalya': 7, 'Artvin': 8, 'Aydın': 9, 'Balıkesir': 10,
@@ -1059,17 +1060,156 @@ export class StatsService {
       'Yozgat': 66, 'Zonguldak': 67, 'Aksaray': 68, 'Bayburt': 69, 'Karaman': 70,
       'Kırıkkale': 71, 'Batman': 72, 'Şırnak': 73, 'Bartın': 74, 'Ardahan': 75,
       'Iğdır': 76, 'Yalova': 77, 'Karabük': 78, 'Kilis': 79, 'Osmaniye': 80,
-      'Düzce': 81
+      'Düzce': 81,
     };
 
-    // Şehir dağılımını plaka numaralarıyla eşleştir
-    const cityDistributionWithPlate = cityDistribution.map(item => ({
-      city: item.city,
-      plateNumber: cityPlateMapping[item.city] || null,
-      saleCount: parseInt(item.saleCount || '0'),
-      customerCount: parseInt(item.customerCount || '0'),
-      totalRevenue: parseFloat(item.totalRevenue || '0'),
-    }));
+    const normalizeCityKey = (value?: string | null): string =>
+      (value || '')
+        .trim()
+        .toLocaleLowerCase('tr-TR')
+        .replace(/ı/g, 'i')
+        .replace(/ğ/g, 'g')
+        .replace(/ü/g, 'u')
+        .replace(/ş/g, 's')
+        .replace(/ö/g, 'o')
+        .replace(/ç/g, 'c')
+        .replace(/\s+/g, '');
+
+    const cityKeyToCanonical = new Map<string, string>();
+    Object.keys(cityPlateMapping).forEach((city) => {
+      cityKeyToCanonical.set(normalizeCityKey(city), city);
+    });
+    cityKeyToCanonical.set('tekirdag', 'Tekirdağ');
+    cityKeyToCanonical.set('afyon', 'Afyonkarahisar');
+    cityKeyToCanonical.set('maras', 'Kahramanmaraş');
+    cityKeyToCanonical.set('urfa', 'Şanlıurfa');
+    cityKeyToCanonical.set('icel', 'Mersin');
+
+    const resolveCustomerCity = (value?: string | null): string | null => {
+      if (!value || !value.trim()) return null;
+      return cityKeyToCanonical.get(normalizeCityKey(value)) || null;
+    };
+
+    const saleCityRows = await this.saleRepository
+      .createQueryBuilder('sale')
+      .leftJoin('customers', 'customer', 'sale.customer_id = customer.id')
+      .leftJoin('user_customers', 'userCustomer', 'sale.user_customer_id = userCustomer.id')
+      .leftJoin('vehicles', 'vehicle', 'sale.vehicle_id = vehicle.id')
+      .leftJoin('customers', 'vehicleCustomer', 'vehicle.customer_id = vehicleCustomer.id')
+      .leftJoin('payments', 'paymentBySale', 'paymentBySale.sale_id = sale.id')
+      .select('sale.id', 'saleId')
+      .addSelect('sale.price', 'price')
+      .addSelect('sale.package_id', 'packageId')
+      .addSelect('sale.start_date', 'startDate')
+      .addSelect('sale.agency_id', 'agencyId')
+      .addSelect('customer.id', 'customerId')
+      .addSelect('customer.city', 'customerCity')
+      .addSelect('userCustomer.id', 'userCustomerId')
+      .addSelect('userCustomer.city', 'userCustomerCity')
+      .addSelect('vehicleCustomer.id', 'vehicleCustomerId')
+      .addSelect('vehicleCustomer.city', 'vehicleCustomerCity')
+      .addSelect(
+        `JSON_UNQUOTE(JSON_EXTRACT(paymentBySale.payment_details, '$.sale_data.customer.city'))`,
+        'paymentCityBySaleId'
+      )
+      .getRawMany();
+
+    // sale_id boş ödemeler: paket + başlangıç tarihi + fiyat ile eşleştir
+    const orphanPaymentRows = await this.paymentRepository
+      .createQueryBuilder('payment')
+      .select('payment.id', 'paymentId')
+      .addSelect(
+        `JSON_UNQUOTE(JSON_EXTRACT(payment.payment_details, '$.sale_data.sale.package_id'))`,
+        'packageId'
+      )
+      .addSelect(
+        `DATE(JSON_UNQUOTE(JSON_EXTRACT(payment.payment_details, '$.sale_data.sale.start_date')))`,
+        'startDate'
+      )
+      .addSelect(
+        `CAST(JSON_UNQUOTE(JSON_EXTRACT(payment.payment_details, '$.sale_data.sale.price')) AS DECIMAL(10,2))`,
+        'price'
+      )
+      .addSelect(
+        `JSON_UNQUOTE(JSON_EXTRACT(payment.payment_details, '$.sale_data.customer.city'))`,
+        'customerCity'
+      )
+      .addSelect(
+        `JSON_UNQUOTE(JSON_EXTRACT(payment.payment_details, '$.agency_id'))`,
+        'agencyId'
+      )
+      .where(`JSON_EXTRACT(payment.payment_details, '$.sale_data.customer.city') IS NOT NULL`)
+      .andWhere(`NULLIF(JSON_UNQUOTE(JSON_EXTRACT(payment.payment_details, '$.sale_data.customer.city')), '') IS NOT NULL`)
+      .getRawMany();
+
+    const paymentCityByKey = new Map<string, string>();
+    for (const p of orphanPaymentRows) {
+      if (!p.packageId || !p.startDate || p.price == null) continue;
+      const city = resolveCustomerCity(p.customerCity);
+      if (!city) continue;
+      const start =
+        p.startDate instanceof Date
+          ? p.startDate.toISOString().slice(0, 10)
+          : String(p.startDate).slice(0, 10);
+      const priceKey = Number(p.price).toFixed(2);
+      const keys = [
+        `${p.packageId}|${start}|${priceKey}|${p.agencyId || ''}`,
+        `${p.packageId}|${start}|${priceKey}|`,
+      ];
+      for (const key of keys) {
+        if (!paymentCityByKey.has(key)) paymentCityByKey.set(key, city);
+      }
+    }
+
+    const cityAgg = new Map<
+      string,
+      { city: string; saleCount: number; customerIds: Set<string>; totalRevenue: number }
+    >();
+    const seenSaleIds = new Set<string>();
+
+    for (const row of saleCityRows) {
+      if (!row.saleId || seenSaleIds.has(row.saleId)) continue;
+      seenSaleIds.add(row.saleId);
+
+      const start =
+        row.startDate instanceof Date
+          ? row.startDate.toISOString().slice(0, 10)
+          : String(row.startDate || '').slice(0, 10);
+      const priceKey = Number(row.price || 0).toFixed(2);
+      const matchedPaymentCity =
+        paymentCityByKey.get(`${row.packageId}|${start}|${priceKey}|${row.agencyId || ''}`) ||
+        paymentCityByKey.get(`${row.packageId}|${start}|${priceKey}|`);
+
+      const city =
+        resolveCustomerCity(row.customerCity) ||
+        resolveCustomerCity(row.userCustomerCity) ||
+        resolveCustomerCity(row.vehicleCustomerCity) ||
+        resolveCustomerCity(row.paymentCityBySaleId) ||
+        matchedPaymentCity ||
+        'Belirtilmemiş';
+
+      const bucket = cityAgg.get(city) || {
+        city,
+        saleCount: 0,
+        customerIds: new Set<string>(),
+        totalRevenue: 0,
+      };
+      bucket.saleCount += 1;
+      bucket.totalRevenue += parseFloat(row.price || '0') || 0;
+      const customerKey = row.customerId || row.userCustomerId || row.vehicleCustomerId;
+      if (customerKey) bucket.customerIds.add(customerKey);
+      cityAgg.set(city, bucket);
+    }
+
+    const cityDistributionWithPlate = Array.from(cityAgg.values())
+      .map((item) => ({
+        city: item.city,
+        plateNumber: cityPlateMapping[item.city] || null,
+        saleCount: item.saleCount,
+        customerCount: item.customerIds.size,
+        totalRevenue: item.totalRevenue,
+      }))
+      .sort((a, b) => b.saleCount - a.saleCount);
 
     // Debug bilgisi (production'da kaldırılabilir)
     console.log('📊 Satış Dağılım Raporu Debug:', {
@@ -1079,8 +1219,8 @@ export class StatsService {
       topCarBrandsCount: topCarBrands.length,
       topCarModelsCount: topCarModels.length,
       topModelYearsCount: topModelYears.length,
-      cityDistributionCount: cityDistribution.length,
-      cityDistributionSample: cityDistribution.slice(0, 3),
+      cityDistributionCount: cityDistributionWithPlate.length,
+      cityDistributionSample: cityDistributionWithPlate.slice(0, 3),
     });
 
     // Komisyon dağılımı: acente ve şube bazında ödenecek/ödenen bakiye (Satış Dağılım Raporu Super Admin için)

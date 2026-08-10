@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { SaleService } from '../services/SaleService';
-import { asyncHandler } from '../middlewares/errorHandler';
+import { asyncHandler, AppError } from '../middlewares/errorHandler';
 import { successResponse } from '../utils/response';
 import { UserRole } from '../types/enums';
 import ExcelJS from 'exceljs';
@@ -111,6 +111,20 @@ export class SaleController {
     const { id } = req.params;
     const sale = await this.saleService.update(id, req.body);
     successResponse(res, sale, 'Sale updated successfully');
+  });
+
+  /**
+   * Super Admin: satış başlangıç/bitiş tarihlerini güncelle
+   * PUT /api/v1/sales/:id/dates  { start_date, end_date? }
+   */
+  updateDates = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { id } = req.params;
+    const { start_date, end_date } = req.body || {};
+    if (!start_date) {
+      throw new AppError(400, 'Başlangıç tarihi zorunludur');
+    }
+    const sale = await this.saleService.updateDates(id, start_date, end_date);
+    successResponse(res, sale, 'Satış tarihleri güncellendi');
   });
 
   delete = asyncHandler(async (req: Request, res: Response): Promise<void> => {

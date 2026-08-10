@@ -13,6 +13,7 @@ import { User } from '../entities/User';
 import { DealerApplication } from '../entities/DealerApplication';
 import { AppError } from '../middlewares/errorHandler';
 import { EntityStatus, PaymentType, PaymentStatus, UsageType } from '../types/enums';
+import { resolvePolicyDates } from '../utils/policyDates';
 import { PayTRService } from './PayTRService';
 
 /**
@@ -251,6 +252,8 @@ export class PublicService {
       model_id?: number;
       motor_brand_id?: number;
       motor_model_id?: number;
+      brand_name?: string;
+      model_name?: string;
       model_year: number;
       usage_type: string;
       vehicle_type: string;
@@ -333,16 +336,16 @@ export class PublicService {
         model_id: isMotorcycle ? null : input.vehicle.model_id,
         motor_brand_id: isMotorcycle ? input.vehicle.motor_brand_id : null,
         motor_model_id: isMotorcycle ? input.vehicle.motor_model_id : null,
+        brand_name: input.vehicle.brand_name || null,
+        model_name: input.vehicle.model_name || null,
         model_year: input.vehicle.model_year,
         usage_type: usageType,
         // agency_id ve branch_id null
       });
       await queryRunner.manager.save(vehicle);
 
-      // 3. Satış oluştur
-      const startDate = new Date();
-      const endDate = new Date();
-      endDate.setFullYear(endDate.getFullYear() + 1); // 1 yıllık poliçe
+      // 3. Satış oluştur — tarih yok → bugün+7, bitiş = start+1y
+      const policyDates = resolvePolicyDates();
 
       // Poliçe numarası oluştur
       const policyNumber = `PUB-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
@@ -355,8 +358,8 @@ export class PublicService {
         commission: 0, // Direkt satışta komisyon yok
         branch_commission: 0,
         agency_commission: 0,
-        start_date: startDate,
-        end_date: endDate,
+        start_date: policyDates.start_date,
+        end_date: policyDates.end_date,
         policy_number: policyNumber,
         // agency_id, branch_id, user_id null - public satış
       });
@@ -437,8 +440,8 @@ export class PublicService {
         vehicle_plate: vehicle.plate,
         package_name: pkg.name,
         price: pkg.price,
-        start_date: startDate,
-        end_date: endDate,
+        start_date: policyDates.start_date,
+        end_date: policyDates.end_date,
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();

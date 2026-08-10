@@ -15,8 +15,12 @@ const app: Application = express();
 // gerçek client IP'sini almak için gerekli (X-Forwarded-For header)
 app.set('trust proxy', true);
 
-// Security middleware
-app.use(helmet());
+// Security middleware — CORP same-origin tarayıcıda :5173→:3000 isteklerini kırar
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  })
+);
 
 // CORS configuration
 app.use(cors(config.cors));

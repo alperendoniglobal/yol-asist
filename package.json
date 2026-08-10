@@ -13,6 +13,7 @@
     "scrape:motor-models": "NODE_ENV=development ts-node src/scripts/fetch-all-motor-models.ts",
     "generate-logo-png": "ts-node src/scripts/generate-logo-png.ts",
     "test:pdf-logo": "NODE_OPTIONS='-r dotenv/config' ts-node src/scripts/test-pdf-and-logo.ts",
+    "shift:sale-dates-plus7": "NODE_ENV=development ts-node src/scripts/shift-sale-dates-plus7.ts",
     "create:super-admin": "NODE_ENV=development ts-node src/scripts/create-super-admin.ts",
     "import:packages": "NODE_ENV=development DB_USER=admin DB_PASSWORD='Cozum123!' DB_NAME=yol_asistan DB_HOST=localhost DB_PORT=3306 ts-node src/scripts/import-packages.ts",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/config/database.ts",

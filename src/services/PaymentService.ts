@@ -8,6 +8,7 @@ import { Vehicle } from '../entities/Vehicle';
 import { AppError } from '../middlewares/errorHandler';
 import { applyTenantFilter } from '../middlewares/tenantMiddleware';
 import { PaymentType, PaymentStatus } from '../types/enums';
+import { resolvePolicyDates } from '../utils/policyDates';
 import { PayTRService } from './PayTRService';
 
 export class PaymentService {
@@ -751,6 +752,8 @@ export class PaymentService {
               registration_number: saleData.vehicle.registration_number || undefined,
               model_year: saleData.vehicle.model_year,
               usage_type: saleData.vehicle.usage_type as any,
+              brand_name: saleData.vehicle.brand_name || undefined,
+              model_name: saleData.vehicle.model_name || undefined,
             };
 
             if (isMotorcycle) {
@@ -768,8 +771,14 @@ export class PaymentService {
           throw new AppError(400, 'Vehicle data not found in payment details');
         }
 
-        // 3. Satış oluştur
+        // 3. Satış oluştur — tarihler initiate'te çözülmüş olmalı; yoksa varsayılan
         const policyNumber = `POL-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+        const lockedStart = saleData.sale?.start_date;
+        const lockedEnd = saleData.sale?.end_date;
+        const policyDates =
+          lockedStart && lockedEnd
+            ? { start_date: lockedStart, end_date: lockedEnd }
+            : resolvePolicyDates(lockedStart);
         sale = queryRunner.manager.create(Sale, {
           customer_id: customer.id,
           vehicle_id: vehicle.id,
@@ -778,8 +787,8 @@ export class PaymentService {
           commission: saleData.sale.commission || 0,
           branch_commission: saleData.sale.branch_commission || null,
           agency_commission: saleData.sale.agency_commission || null,
-          start_date: saleData.sale.start_date,
-          end_date: saleData.sale.end_date,
+          start_date: policyDates.start_date,
+          end_date: policyDates.end_date,
           policy_number: policyNumber,
           agency_id: saleData.agency_id || null,
           branch_id: saleData.branch_id || null,
@@ -1169,6 +1178,8 @@ export class PaymentService {
               registration_number: saleData.vehicle.registration_number || undefined,
               model_year: saleData.vehicle.model_year,
               usage_type: saleData.vehicle.usage_type as any,
+              brand_name: saleData.vehicle.brand_name || undefined,
+              model_name: saleData.vehicle.model_name || undefined,
             };
             
             if (isMotorcycle) {
@@ -1184,9 +1195,14 @@ export class PaymentService {
           }
         }
         
-        // 3. Sale oluştur
-        // Policy number oluştur
+        // 3. Sale oluştur — tarihler initiate'te çözülmüş olmalı; yoksa varsayılan
         const policyNumber = `POL-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+        const lockedStart = saleData.sale?.start_date;
+        const lockedEnd = saleData.sale?.end_date;
+        const policyDates =
+          lockedStart && lockedEnd
+            ? { start_date: lockedStart, end_date: lockedEnd }
+            : resolvePolicyDates(lockedStart);
         const saleEntity = queryRunner.manager.create(Sale, {
           customer_id: customer.id,
           vehicle_id: vehicle?.id,
@@ -1198,8 +1214,8 @@ export class PaymentService {
           commission: saleData.sale.commission || 0,
           branch_commission: saleData.sale.branch_commission || null,
           agency_commission: saleData.sale.agency_commission || null,
-          start_date: saleData.sale.start_date || undefined,
-          end_date: saleData.sale.end_date || undefined,
+          start_date: policyDates.start_date,
+          end_date: policyDates.end_date,
           policy_number: policyNumber,
           status: saleData.sale.status || 'COMPLETED',
           payment_method: 'PAYTR',

@@ -72,6 +72,13 @@ export class Vehicle {
   @Column({ type: 'int', nullable: true, comment: 'Motosiklet model ID (motor_models tablosundan)' })
   motor_model_id: number | null;
 
+  // Katalogda olmayan marka/model (veya ID ile senkron ad)
+  @Column({ type: 'varchar', length: 255, nullable: true, comment: 'Katalog dışı veya senkron marka adı' })
+  brand_name: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true, comment: 'Katalog dışı veya senkron model adı' })
+  model_name: string | null;
+
   @Column({ type: 'int' })
   model_year: number;
 

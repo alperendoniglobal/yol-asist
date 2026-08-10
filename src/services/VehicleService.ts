@@ -14,16 +14,25 @@ export class VehicleService {
     if (!vehicle) return vehicle;
 
     const isMotorcycle = vehicle.vehicle_type === 'Motosiklet';
-    
-    // Normalize edilmiş vehicle objesi oluştur
+    const catalogBrand = isMotorcycle ? vehicle.motorBrand : vehicle.brand;
+    const catalogModel = isMotorcycle ? vehicle.motorModel : vehicle.model;
+
+    // Katalog yoksa string marka/model ile fallback
+    const brand =
+      catalogBrand ||
+      (vehicle.brand_name ? { id: null, name: vehicle.brand_name } : null);
+    const model =
+      catalogModel ||
+      (vehicle.model_name ? { id: null, name: vehicle.model_name } : null);
+
     const normalized: any = {
       ...vehicle,
-      // brand ve model'i vehicle_type'a göre doldur
-      brand: isMotorcycle ? vehicle.motorBrand : vehicle.brand,
-      model: isMotorcycle ? vehicle.motorModel : vehicle.model,
-      // Orijinal ID'leri de ekle (gerekirse)
+      brand,
+      model,
       brand_id: isMotorcycle ? vehicle.motor_brand_id : vehicle.brand_id,
       model_id: isMotorcycle ? vehicle.motor_model_id : vehicle.model_id,
+      brand_name: vehicle.brand_name || catalogBrand?.name || null,
+      model_name: vehicle.model_name || catalogModel?.name || null,
     };
 
     return normalized;

@@ -267,16 +267,14 @@ export class PdfService {
 
       y += 145;
 
+      // Tek kaynak: DB'deki geçerlilik tarihleri (PDF'de +7 kaydırma yok)
       const startDateDisplay = new Date(sale.start_date);
-      startDateDisplay.setDate(startDateDisplay.getDate() + 7);
       const endDateDisplay = new Date(sale.end_date);
-      endDateDisplay.setDate(endDateDisplay.getDate() + 7);
       const tanzimDate = sale.created_at instanceof Date
         ? new Date(sale.created_at)
         : sale.created_at
           ? new Date(sale.created_at)
           : new Date();
-      tanzimDate.setDate(tanzimDate.getDate() + 7);
 
       const coversHeight = 30 + (covers.length * 14) + 30;
       const secondRowCardHeight = Math.max(130, coversHeight);
@@ -363,7 +361,7 @@ export class PdfService {
           'Yakıt Bitmesi/Şarj Bitmesi: Fosil yakıtlı araçlarda yakıt bitmesi ya da elektrik motorlu araçlarda pil bitmesi sonucu hareketsiz kalması sonucu en yakın ilgili istasyona çekim sağlanır. (Limitler dahilinde)',
         ]},
         { title: 'GENEL ŞARTLAR', items: [
-          'a) İş bu hizmet sözleşmesi tanzim tarihinden 7 gün sonra geçerli olacaktır. 7 gün bekleme süresi vardır.',
+          'a) Hizmet, poliçede yazılı başlangıç tarihinde yürürlüğe girer. Başlangıç tarihi belirtilmezse tanzim tarihinden 7 gün sonra başlar.',
           'b) Hizmetlerden yalnızca çağrı merkezimize iletilen taleplere destek sağlanacaktır.',
           'c) Sözleşmenin ilk sayfasında belirtilen limitler dahilinde çekme/kurtarma işlemi en yakın servis/tamirhaneye kadar çekim hizmeti verilir.',
           'd) Paket limit aşımları ve bu aşımdan kaynaklı köprü/otoyol/otopark ücretleri müşteri tarafından karşılanır.',

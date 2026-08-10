@@ -9,6 +9,7 @@ import { Package } from '../entities/Package';
 import { AppError } from '../middlewares/errorHandler';
 import { applyTenantFilter } from '../middlewares/tenantMiddleware';
 import { PaymentType, PaymentStatus, UsageType, UserRole } from '../types/enums';
+import { resolvePolicyDates, normalizeToYmd, addYearsYmd } from '../utils/policyDates';
 import { SmsService } from './SmsService';
 import { VehicleService } from './VehicleService';
 
@@ -40,14 +41,19 @@ interface CompleteSaleInput {
     model_id?: number; // Otomobil için
     motor_brand_id?: number; // Motosiklet için
     motor_model_id?: number; // Motosiklet için
+    /** Katalog dışı marka (ID yoksa zorunlu) */
+    brand_name?: string;
+    /** Katalog dışı model (ID yoksa zorunlu) */
+    model_name?: string;
     model_year: number;
     usage_type: string;
   };
   // Satış bilgileri
   sale: {
     package_id: string;
-    start_date: string;
-    end_date: string;
+    /** Opsiyonel; yoksa bugün+7. Bitiş sunucuda start+1y türetilir. */
+    start_date?: string;
+    end_date?: string;
     price: number;
     commission?: number;
   };
@@ -406,6 +412,45 @@ export class SaleService {
     return sale;
   }
 
+  /**
+   * Super Admin: poliçe başlangıç/bitiş tarihlerini güncelle.
+   * end_date yoksa start + 1 yıl türetilir. Geçmiş tarihe izin verilir (düzeltme senaryosu).
+   */
+  async updateDates(id: string, startDate: string, endDate?: string | null) {
+    const sale = await this.saleRepository.findOne({
+      where: { id },
+      relations: ['customer', 'vehicle', 'package', 'agency', 'branch', 'user', 'payments'],
+    });
+
+    if (!sale) {
+      throw new AppError(404, 'Satış bulunamadı');
+    }
+
+    const start = normalizeToYmd(startDate);
+    if (!start) {
+      throw new AppError(400, 'Geçersiz başlangıç tarihi');
+    }
+
+    let end: string;
+    if (endDate?.toString().trim()) {
+      const normalizedEnd = normalizeToYmd(endDate.toString());
+      if (!normalizedEnd) {
+        throw new AppError(400, 'Geçersiz bitiş tarihi');
+      }
+      if (normalizedEnd <= start) {
+        throw new AppError(400, 'Bitiş tarihi başlangıçtan sonra olmalıdır');
+      }
+      end = normalizedEnd;
+    } else {
+      end = addYearsYmd(start, 1);
+    }
+
+    sale.start_date = start as any;
+    sale.end_date = end as any;
+    await this.saleRepository.save(sale);
+    return sale;
+  }
+
   // Satış sil
   async delete(id: string) {
     const sale = await this.saleRepository.findOne({ where: { id } });
@@ -463,20 +508,21 @@ export class SaleService {
       if (!input.vehicle.vehicle_type) {
         missingFields.push('Araç tipi');
       }
-      // Otomobil için marka ve model kontrolü
+      // Marka/model: katalog ID veya serbest metin
+      const brandName = input.vehicle.brand_name?.trim();
+      const modelName = input.vehicle.model_name?.trim();
       if (input.vehicle.vehicle_type !== 'Motosiklet') {
-        if (!input.vehicle.brand_id) {
+        const hasIds = !!input.vehicle.brand_id && !!input.vehicle.model_id;
+        const hasNames = !!brandName && !!modelName;
+        if (!hasIds && !hasNames) {
           missingFields.push('Araç markası');
-        }
-        if (!input.vehicle.model_id) {
           missingFields.push('Araç modeli');
         }
       } else {
-        // Motosiklet için motor marka ve model kontrolü
-        if (!input.vehicle.motor_brand_id) {
+        const hasIds = !!input.vehicle.motor_brand_id && !!input.vehicle.motor_model_id;
+        const hasNames = !!brandName && !!modelName;
+        if (!hasIds && !hasNames) {
           missingFields.push('Motor markası');
-        }
-        if (!input.vehicle.motor_model_id) {
           missingFields.push('Motor modeli');
         }
       }
@@ -488,12 +534,6 @@ export class SaleService {
     } else {
       if (!input.sale.package_id) {
         missingFields.push('Paket');
-      }
-      if (!input.sale.start_date) {
-        missingFields.push('Başlangıç tarihi');
-      }
-      if (!input.sale.end_date) {
-        missingFields.push('Bitiş tarihi');
       }
       if (!input.sale.price || input.sale.price <= 0) {
         missingFields.push('Satış fiyatı (0\'dan büyük olmalı)');
@@ -509,6 +549,11 @@ export class SaleService {
     if (missingFields.length > 0) {
       throw new AppError(400, `Eksik bilgiler: ${missingFields.join(', ')}. Lütfen tüm zorunlu alanları doldurun.`);
     }
+
+    // Başlangıç/bitiş: tek kaynak (gönderilmezse bugün+7, end = start+1y)
+    const policyDates = resolvePolicyDates(input.sale.start_date);
+    input.sale.start_date = policyDates.start_date;
+    input.sale.end_date = policyDates.end_date;
     
     // Transaction başlat - hata olursa tüm işlemler geri alınır
     const queryRunner = AppDataSource.createQueryRunner();
@@ -583,6 +628,49 @@ export class SaleService {
 
       // Motosiklet mi otomobil mi kontrol et
       const isMotorcycle = input.vehicle.vehicle_type === 'Motosiklet';
+      const resolvedBrandName = input.vehicle.brand_name?.trim() || null;
+      const resolvedModelName = input.vehicle.model_name?.trim() || null;
+
+      // Katalog ID varsa adları da senkronize et (tutarlı okuma)
+      let syncBrandName = resolvedBrandName;
+      let syncModelName = resolvedModelName;
+
+      if (isMotorcycle && input.vehicle.motor_brand_id) {
+        const motorBrand = await queryRunner.manager
+          .createQueryBuilder()
+          .select('b.name', 'name')
+          .from('motor_brands', 'b')
+          .where('b.id = :id', { id: input.vehicle.motor_brand_id })
+          .getRawOne();
+        if (motorBrand?.name) syncBrandName = syncBrandName || motorBrand.name;
+      }
+      if (isMotorcycle && input.vehicle.motor_model_id) {
+        const motorModel = await queryRunner.manager
+          .createQueryBuilder()
+          .select('m.name', 'name')
+          .from('motor_models', 'm')
+          .where('m.id = :id', { id: input.vehicle.motor_model_id })
+          .getRawOne();
+        if (motorModel?.name) syncModelName = syncModelName || motorModel.name;
+      }
+      if (!isMotorcycle && input.vehicle.brand_id) {
+        const carBrand = await queryRunner.manager
+          .createQueryBuilder()
+          .select('b.name', 'name')
+          .from('cars_brands', 'b')
+          .where('b.id = :id', { id: input.vehicle.brand_id })
+          .getRawOne();
+        if (carBrand?.name) syncBrandName = syncBrandName || carBrand.name;
+      }
+      if (!isMotorcycle && input.vehicle.model_id) {
+        const carModel = await queryRunner.manager
+          .createQueryBuilder()
+          .select('m.name', 'name')
+          .from('cars_models', 'm')
+          .where('m.id = :id', { id: input.vehicle.model_id })
+          .getRawOne();
+        if (carModel?.name) syncModelName = syncModelName || carModel.name;
+      }
 
       if (vehicle) {
         // Mevcut araç - bilgilerini güncelle
@@ -594,6 +682,8 @@ export class SaleService {
           registration_number: input.vehicle.registration_number || null,
           model_year: input.vehicle.model_year,
           usage_type: input.vehicle.usage_type,
+          brand_name: syncBrandName,
+          model_name: syncModelName,
         };
 
         // Motosiklet için motor_brand_id ve motor_model_id, otomobil için brand_id ve model_id kullan
@@ -624,6 +714,8 @@ export class SaleService {
           registration_number: input.vehicle.registration_number || undefined,
           model_year: input.vehicle.model_year,
           usage_type: input.vehicle.usage_type as UsageType,  // string'i enum'a cast et
+          brand_name: syncBrandName || undefined,
+          model_name: syncModelName || undefined,
         };
 
         // Motosiklet için motor_brand_id ve motor_model_id, otomobil için brand_id ve model_id kullan
@@ -725,6 +817,8 @@ export class SaleService {
             model_id: input.vehicle.model_id,
             motor_brand_id: input.vehicle.motor_brand_id,
             motor_model_id: input.vehicle.motor_model_id,
+            brand_name: input.vehicle.brand_name,
+            model_name: input.vehicle.model_name,
             model_year: input.vehicle.model_year,
             usage_type: input.vehicle.usage_type,
           },

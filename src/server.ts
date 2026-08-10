@@ -16,10 +16,10 @@ const startServer = async () => {
     logger.info('Database connection established successfully');
 
     // Start HTTP server
-    const server = app.listen(config.port, () => {
+    const server = app.listen(config.port, '0.0.0.0', () => {
       logger.info(`Server is running on port ${config.port}`);
       logger.info(`Environment: ${config.nodeEnv}`);
-      logger.info(`API URL: http://localhost:${config.port}/api/v1`);
+      logger.info(`API URL: http://127.0.0.1:${config.port}/api/v1`);
     });
 
     // Initialize Socket.io server

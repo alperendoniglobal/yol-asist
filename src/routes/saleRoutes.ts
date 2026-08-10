@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { SaleController } from '../controllers/SaleController';
-import { authMiddleware, tenantMiddleware, allRoles, agencyAdminOrAbove } from '../middlewares';
+import { authMiddleware, tenantMiddleware, allRoles, agencyAdminOrAbove, superAdminOnly } from '../middlewares';
 
 const router = Router();
 const saleController = new SaleController();
@@ -15,6 +15,7 @@ router.get('/stats', saleController.getStats);
 router.get('/export', allRoles, saleController.export);
 router.get('/:id', saleController.getById);
 router.post('/', allRoles, saleController.create);
+router.put('/:id/dates', superAdminOnly, saleController.updateDates);
 router.put('/:id', allRoles, saleController.update);
 router.delete('/:id', allRoles, saleController.delete);
 
