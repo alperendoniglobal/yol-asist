@@ -127,6 +127,20 @@ export class SaleController {
     successResponse(res, sale, 'Satış tarihleri güncellendi');
   });
 
+  /**
+   * Super Admin: satışı başka kullanıcıya ata (broker/şube de hedef kullanıcıya göre güncellenir)
+   * PUT /api/v1/sales/:id/assign  { user_id }
+   */
+  assignSeller = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { id } = req.params;
+    const { user_id } = req.body || {};
+    if (!user_id) {
+      throw new AppError(400, 'user_id zorunludur');
+    }
+    const sale = await this.saleService.assignSeller(id, user_id);
+    successResponse(res, sale, 'Satış yeni satıcıya atandı');
+  });
+
   delete = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
     const result = await this.saleService.delete(id);

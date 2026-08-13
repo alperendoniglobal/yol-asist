@@ -1,0 +1,564 @@
+{
+  "ok": true,
+  "restored_sales": 15,
+  "expected": 15,
+  "branchCredits": {
+    "d5fa5c2f-d3a5-4be3-8656-1ee07ce111b3": 615,
+    "b2c46ad4-bdbc-4e27-b7bb-148a3bf39f7a": 3075,
+    "fd407512-4cf7-49e2-b55c-59fd386da260": 307.5,
+    "d12cbc4e-be86-4fad-ba29-59f02c7c8a9a": 550
+  },
+  "agencyCredits": {
+    "887d8c18-2cb7-4b01-b8fb-15a28aaac55b": 490.83,
+    "e1e81bfe-099d-40ff-bdb3-b58938da7a43": 1024.98,
+    "8bfea4fc-d4ca-496e-b1b3-fb225c254f0c": 866.6700000000001
+  },
+  "verify": [
+    {
+      "policy_number": "POL-1768379610073-8737",
+      "price": "1000.00",
+      "branch_commission": null,
+      "agency_commission": "400.00",
+      "agency_id": "8bfea4fc-d4ca-496e-b1b3-fb225c254f0c",
+      "branch_id": null,
+      "user_id": "394ae75f-0bb1-46ab-815d-d22f5201397a"
+    },
+    {
+      "policy_number": "POL-1769434999839-2093",
+      "price": "1000.00",
+      "branch_commission": "300.00",
+      "agency_commission": "100.00",
+      "agency_id": "887d8c18-2cb7-4b01-b8fb-15a28aaac55b",
+      "branch_id": "d12cbc4e-be86-4fad-ba29-59f02c7c8a9a",
+      "user_id": "7295d598-6c66-49df-a4c0-5401f6bd688d"
+    },
+    {
+      "policy_number": "POL-1770027417828-9504",
+      "price": "1230.00",
+      "branch_commission": "307.50",
+      "agency_commission": "102.50",
+      "agency_id": "887d8c18-2cb7-4b01-b8fb-15a28aaac55b",
+      "branch_id": "d5fa5c2f-d3a5-4be3-8656-1ee07ce111b3",
+      "user_id": "e8bb086c-12f2-4c49-b91e-dad06f12b02d"
+    },
+    {
+      "policy_number": "POL-1770029967448-2086",
+      "price": "1230.00",
+      "branch_commission": "307.50",
+      "agency_commission": "102.50",
+      "agency_id": "887d8c18-2cb7-4b01-b8fb-15a28aaac55b",
+      "branch_id": "d5fa5c2f-d3a5-4be3-8656-1ee07ce111b3",
+      "user_id": "e8bb086c-12f2-4c49-b91e-dad06f12b02d"
+    },
+    {
+      "policy_number": "POL-1770624425831-4100",
+      "price": "1230.00",
+      "branch_commission": "307.50",
+      "agency_commission": "102.50",
+      "agency_id": "887d8c18-2cb7-4b01-b8fb-15a28aaac55b",
+      "branch_id": "fd407512-4cf7-49e2-b55c-59fd386da260",
+      "user_id": "3b5059df-e1f3-4bf5-afea-91eb025a9d86"
+    },
+    {
+      "policy_number": "POL-1771076969152-5876",
+      "price": "1000.00",
+      "branch_commission": "250.00",
+      "agency_commission": "83.33",
+      "agency_id": "887d8c18-2cb7-4b01-b8fb-15a28aaac55b",
+      "branch_id": "d12cbc4e-be86-4fad-ba29-59f02c7c8a9a",
+      "user_id": "7295d598-6c66-49df-a4c0-5401f6bd688d"
+    },
+    {
+      "policy_number": "POL-1771321022090-6481",
+      "price": "1400.00",
+      "branch_commission": null,
+      "agency_commission": "466.67",
+      "agency_id": "8bfea4fc-d4ca-496e-b1b3-fb225c254f0c",
+      "branch_id": null,
+      "user_id": "394ae75f-0bb1-46ab-815d-d22f5201397a"
+    },
+    {
+      "policy_number": "POL-1774339223666-82",
+      "price": "1000.00",
+      "branch_commission": "250.00",
+      "agency_commission": "83.33",
+      "agency_id": "e1e81bfe-099d-40ff-bdb3-b58938da7a43",
+      "branch_id": "b2c46ad4-bdbc-4e27-b7bb-148a3bf39f7a",
+      "user_id": "00d3a123-c18d-4fd0-8218-10418ce56d9e"
+    },
+    {
+      "policy_number": "POL-1774424927034-9354",
+      "price": "1600.00",
+      "branch_commission": "400.00",
+      "agency_commission": "133.33",
+      "agency_id": "e1e81bfe-099d-40ff-bdb3-b58938da7a43",
+      "branch_id": "b2c46ad4-bdbc-4e27-b7bb-148a3bf39f7a",
+      "user_id": "00d3a123-c18d-4fd0-8218-10418ce56d9e"
+    },
+    {
+      "policy_number": "POL-1774530210541-1415",
+      "price": "1600.00",
+      "branch_commission": "400.00",
+      "agency_commission": "133.33",
+      "agency_id": "e1e81bfe-099d-40ff-bdb3-b58938da7a43",
+      "branch_id": "b2c46ad4-bdbc-4e27-b7bb-148a3bf39f7a",
+      "user_id": "00d3a123-c18d-4fd0-8218-10418ce56d9e"
+    },
+    {
+      "policy_number": "POL-1775200756703-5755",
+      "price": "1600.00",
+      "branch_commission": "400.00",
+      "agency_commission": "133.33",
+      "agency_id": "e1e81bfe-099d-40ff-bdb3-b58938da7a43",
+      "branch_id": "b2c46ad4-bdbc-4e27-b7bb-148a3bf39f7a",
+      "user_id": "00d3a123-c18d-4fd0-8218-10418ce56d9e"
+    },
+    {
+      "policy_number": "POL-1776677606920-7651",
+      "price": "1600.00",
+      "branch_commission": "400.00",
+      "agency_commission": "133.33",
+      "agency_id": "e1e81bfe-099d-40ff-bdb3-b58938da7a43",
+      "branch_id": "b2c46ad4-bdbc-4e27-b7bb-148a3bf39f7a",
+      "user_id": "00d3a123-c18d-4fd0-8218-10418ce56d9e"
+    },
+    {
+      "policy_number": "POL-1778664205851-1097",
+      "price": "1600.00",
+      "branch_commission": "400.00",
+      "agency_commission": "133.33",
+      "agency_id": "e1e81bfe-099d-40ff-bdb3-b58938da7a43",
+      "branch_id": "b2c46ad4-bdbc-4e27-b7bb-148a3bf39f7a",
+      "user_id": "00d3a123-c18d-4fd0-8218-10418ce56d9e"
+    },
+    {
+      "policy_number": "POL-1778844241352-635",
+      "price": "1700.00",
+      "branch_commission": "425.00",
+      "agency_commission": "141.67",
+      "agency_id": "e1e81bfe-099d-40ff-bdb3-b58938da7a43",
+      "branch_id": "b2c46ad4-bdbc-4e27-b7bb-148a3bf39f7a",
+      "user_id": "00d3a123-c18d-4fd0-8218-10418ce56d9e"
+    },
+    {
+      "policy_number": "POL-1779890967600-2847",
+      "price": "1600.00",
+      "branch_commission": "400.00",
+      "agency_commission": "133.33",
+      "agency_id": "e1e81bfe-099d-40ff-bdb3-b58938da7a43",
+      "branch_id": "b2c46ad4-bdbc-4e27-b7bb-148a3bf39f7a",
+      "user_id": "00d3a123-c18d-4fd0-8218-10418ce56d9e"
+    }
+  ],
+  "log": [
+    {
+      "step": "agency_created",
+      "id": "8bfea4fc-d4ca-496e-b1b3-fb225c254f0c",
+      "name": "FORBES SİGORTA ARA.HİZ.LTD.ŞTİ."
+    },
+    {
+      "step": "user_created",
+      "id": "7295d598-6c66-49df-a4c0-5401f6bd688d",
+      "name": "VEDAT",
+      "agency_id": "887d8c18-2cb7-4b01-b8fb-15a28aaac55b",
+      "branch_id": "d12cbc4e-be86-4fad-ba29-59f02c7c8a9a"
+    },
+    {
+      "step": "user_created",
+      "id": "3b5059df-e1f3-4bf5-afea-91eb025a9d86",
+      "name": "ADEM",
+      "agency_id": "887d8c18-2cb7-4b01-b8fb-15a28aaac55b",
+      "branch_id": "fd407512-4cf7-49e2-b55c-59fd386da260"
+    },
+    {
+      "step": "user_exists",
+      "id": "00d3a123-c18d-4fd0-8218-10418ce56d9e",
+      "name": "SAKİNE ŞİMŞİR "
+    },
+    {
+      "step": "user_created",
+      "id": "394ae75f-0bb1-46ab-815d-d22f5201397a",
+      "name": "FORBES SİGORTA ",
+      "agency_id": "8bfea4fc-d4ca-496e-b1b3-fb225c254f0c",
+      "branch_id": null
+    },
+    {
+      "step": "user_created",
+      "id": "e8bb086c-12f2-4c49-b91e-dad06f12b02d",
+      "name": "ZAGUT SİGORTA ARA.HİZ.LTD.ŞTİ.",
+      "agency_id": "887d8c18-2cb7-4b01-b8fb-15a28aaac55b",
+      "branch_id": "d5fa5c2f-d3a5-4be3-8656-1ee07ce111b3"
+    },
+    {
+      "step": "customer_stamped",
+      "id": "d18d4821-f168-482f-8221-6a63918dc55e"
+    },
+    {
+      "step": "customer_stamped",
+      "id": "cda8bfd3-498d-4b9b-89c7-e59eaddad1ba"
+    },
+    {
+      "step": "customer_stamped",
+      "id": "2ba31a25-ef69-466e-ba00-525f660d0236"
+    },
+    {
+      "step": "customer_stamped",
+      "id": "6ce1655e-508b-4250-b39a-f24854a54509"
+    },
+    {
+      "step": "customer_created",
+      "id": "3666b297-53ee-41e3-adc5-8c659e5895cc"
+    },
+    {
+      "step": "customer_stamped",
+      "id": "673a60e6-6118-4046-95da-f243bcfa24be"
+    },
+    {
+      "step": "customer_stamped",
+      "id": "09af545e-bcd6-4efc-812e-18a0fd4cc21a"
+    },
+    {
+      "step": "customer_stamped",
+      "id": "d23c6728-7dd9-490b-a992-b1d321161899"
+    },
+    {
+      "step": "customer_stamped",
+      "id": "d0e2dc13-37d0-4acb-952a-e0b85cf9fcdc"
+    },
+    {
+      "step": "customer_stamped",
+      "id": "dd7bb487-000d-4b32-8b2e-7cc14266ff62"
+    },
+    {
+      "step": "customer_stamped",
+      "id": "efd6bc13-de5d-471f-8c0d-1795308c251b"
+    },
+    {
+      "step": "customer_stamped",
+      "id": "35d08fd0-87a3-4212-ac2e-27817915b190"
+    },
+    {
+      "step": "customer_stamped",
+      "id": "8bee19c0-18df-4694-a727-7b08a27520eb"
+    },
+    {
+      "step": "customer_stamped",
+      "id": "966eefcd-6696-4306-b19a-3e1d5f957865"
+    },
+    {
+      "step": "customer_stamped",
+      "id": "7e55148a-2da8-409d-8c34-6360a54c77aa"
+    },
+    {
+      "step": "vehicle_created",
+      "id": "e3a1a83c-5345-4347-8547-0b0fadf679ce",
+      "plate": "34BPN586"
+    },
+    {
+      "step": "vehicle_created",
+      "id": "cc54c13f-9a7d-412a-98c4-2f8411f8b29c",
+      "plate": "34FAA742"
+    },
+    {
+      "step": "vehicle_created",
+      "id": "0ee4b332-d1a1-48a8-92a8-54fd99b677ad",
+      "plate": "34JJ869"
+    },
+    {
+      "step": "vehicle_created",
+      "id": "31382ed6-ccb1-4fe3-8f34-5ca86524996c",
+      "plate": "06BIG175"
+    },
+    {
+      "step": "vehicle_created",
+      "id": "cf8e8f3f-5e71-45be-a74d-02b9315c5852",
+      "plate": "35DC4669"
+    },
+    {
+      "step": "vehicle_created",
+      "id": "8b0bd24e-0d2f-487c-a05b-46b54f435605",
+      "plate": "10FL040"
+    },
+    {
+      "step": "vehicle_created",
+      "id": "e0dc5163-a0d2-4eda-aacf-1e78da1988c6",
+      "plate": "34BRP840"
+    },
+    {
+      "step": "vehicle_created",
+      "id": "1c7d2b0a-dcd3-467a-9864-c40d1dd66ab2",
+      "plate": "07D1002"
+    },
+    {
+      "step": "vehicle_created",
+      "id": "f24b38ed-e185-4ba1-a363-51eeed706695",
+      "plate": "54ACC443"
+    },
+    {
+      "step": "vehicle_created",
+      "id": "630da1d1-6146-4a13-bd9b-09ea63c0f7dc",
+      "plate": "48KK888"
+    },
+    {
+      "step": "vehicle_created",
+      "id": "b8cb0ef0-8c94-4b3c-a8f3-038c34930f09",
+      "plate": "34FPC419"
+    },
+    {
+      "step": "vehicle_created",
+      "id": "24cfbe0b-7759-4ce6-a296-51baedb330d4",
+      "plate": "55ATC528"
+    },
+    {
+      "step": "vehicle_created",
+      "id": "57c504a6-1414-4799-814a-89f0f90d0168",
+      "plate": "34BVZ640"
+    },
+    {
+      "step": "vehicle_created",
+      "id": "f73e2f83-5872-451d-a0a1-c38ca749974d",
+      "plate": "41BCT718"
+    },
+    {
+      "step": "vehicle_created",
+      "id": "5064f900-cf36-4fda-a686-64253641831d",
+      "plate": "34DS7576"
+    },
+    {
+      "step": "sale_created",
+      "policy": "POL-1770029967448-2086",
+      "agency_id": "887d8c18-2cb7-4b01-b8fb-15a28aaac55b",
+      "branch_id": "d5fa5c2f-d3a5-4be3-8656-1ee07ce111b3",
+      "branch_commission": 307.5,
+      "agency_commission": 102.5
+    },
+    {
+      "step": "sale_created",
+      "policy": "POL-1778664205851-1097",
+      "agency_id": "e1e81bfe-099d-40ff-bdb3-b58938da7a43",
+      "branch_id": "b2c46ad4-bdbc-4e27-b7bb-148a3bf39f7a",
+      "branch_commission": 400,
+      "agency_commission": 133.33
+    },
+    {
+      "step": "sale_created",
+      "policy": "POL-1770624425831-4100",
+      "agency_id": "887d8c18-2cb7-4b01-b8fb-15a28aaac55b",
+      "branch_id": "fd407512-4cf7-49e2-b55c-59fd386da260",
+      "branch_commission": 307.5,
+      "agency_commission": 102.5
+    },
+    {
+      "step": "sale_created",
+      "policy": "POL-1771076969152-5876",
+      "agency_id": "887d8c18-2cb7-4b01-b8fb-15a28aaac55b",
+      "branch_id": "d12cbc4e-be86-4fad-ba29-59f02c7c8a9a",
+      "branch_commission": 250,
+      "agency_commission": 83.33
+    },
+    {
+      "step": "sale_created",
+      "policy": "POL-1768379610073-8737",
+      "agency_id": "8bfea4fc-d4ca-496e-b1b3-fb225c254f0c",
+      "branch_id": null,
+      "branch_commission": 0,
+      "agency_commission": 400
+    },
+    {
+      "step": "sale_created",
+      "policy": "POL-1771321022090-6481",
+      "agency_id": "8bfea4fc-d4ca-496e-b1b3-fb225c254f0c",
+      "branch_id": null,
+      "branch_commission": 0,
+      "agency_commission": 466.67
+    },
+    {
+      "step": "sale_created",
+      "policy": "POL-1776677606920-7651",
+      "agency_id": "e1e81bfe-099d-40ff-bdb3-b58938da7a43",
+      "branch_id": "b2c46ad4-bdbc-4e27-b7bb-148a3bf39f7a",
+      "branch_commission": 400,
+      "agency_commission": 133.33
+    },
+    {
+      "step": "sale_created",
+      "policy": "POL-1775200756703-5755",
+      "agency_id": "e1e81bfe-099d-40ff-bdb3-b58938da7a43",
+      "branch_id": "b2c46ad4-bdbc-4e27-b7bb-148a3bf39f7a",
+      "branch_commission": 400,
+      "agency_commission": 133.33
+    },
+    {
+      "step": "sale_created",
+      "policy": "POL-1779890967600-2847",
+      "agency_id": "e1e81bfe-099d-40ff-bdb3-b58938da7a43",
+      "branch_id": "b2c46ad4-bdbc-4e27-b7bb-148a3bf39f7a",
+      "branch_commission": 400,
+      "agency_commission": 133.33
+    },
+    {
+      "step": "sale_created",
+      "policy": "POL-1778844241352-635",
+      "agency_id": "e1e81bfe-099d-40ff-bdb3-b58938da7a43",
+      "branch_id": "b2c46ad4-bdbc-4e27-b7bb-148a3bf39f7a",
+      "branch_commission": 425,
+      "agency_commission": 141.67
+    },
+    {
+      "step": "sale_created",
+      "policy": "POL-1774530210541-1415",
+      "agency_id": "e1e81bfe-099d-40ff-bdb3-b58938da7a43",
+      "branch_id": "b2c46ad4-bdbc-4e27-b7bb-148a3bf39f7a",
+      "branch_commission": 400,
+      "agency_commission": 133.33
+    },
+    {
+      "step": "sale_created",
+      "policy": "POL-1769434999839-2093",
+      "agency_id": "887d8c18-2cb7-4b01-b8fb-15a28aaac55b",
+      "branch_id": "d12cbc4e-be86-4fad-ba29-59f02c7c8a9a",
+      "branch_commission": 300,
+      "agency_commission": 100
+    },
+    {
+      "step": "sale_created",
+      "policy": "POL-1774424927034-9354",
+      "agency_id": "e1e81bfe-099d-40ff-bdb3-b58938da7a43",
+      "branch_id": "b2c46ad4-bdbc-4e27-b7bb-148a3bf39f7a",
+      "branch_commission": 400,
+      "agency_commission": 133.33
+    },
+    {
+      "step": "sale_created",
+      "policy": "POL-1774339223666-82",
+      "agency_id": "e1e81bfe-099d-40ff-bdb3-b58938da7a43",
+      "branch_id": "b2c46ad4-bdbc-4e27-b7bb-148a3bf39f7a",
+      "branch_commission": 250,
+      "agency_commission": 83.33
+    },
+    {
+      "step": "sale_created",
+      "policy": "POL-1770027417828-9504",
+      "agency_id": "887d8c18-2cb7-4b01-b8fb-15a28aaac55b",
+      "branch_id": "d5fa5c2f-d3a5-4be3-8656-1ee07ce111b3",
+      "branch_commission": 307.5,
+      "agency_commission": 102.5
+    },
+    {
+      "step": "payment_exists",
+      "id": "0dff5c9c-5ab6-4ede-b77c-838caece0290"
+    },
+    {
+      "step": "payment_exists",
+      "id": "1502b45e-479d-4011-9e4e-5880a4f5d7e1"
+    },
+    {
+      "step": "payment_exists",
+      "id": "155ba4d5-9fed-42f5-8848-be0a2cd2b7b8"
+    },
+    {
+      "step": "payment_exists",
+      "id": "5955b231-5748-4513-9463-d7c291e4aa9a"
+    },
+    {
+      "step": "payment_exists",
+      "id": "8c9fe76f-ab3e-44ed-84fd-719b61d9bed4"
+    },
+    {
+      "step": "payment_exists",
+      "id": "a0fac642-0344-4112-920c-be4b59407cca"
+    },
+    {
+      "step": "payment_exists",
+      "id": "a3eba3f4-3f98-4aca-88fb-df2fb17d578e"
+    },
+    {
+      "step": "payment_exists",
+      "id": "a46223eb-227f-45c1-83ad-0b2c40b02a18"
+    },
+    {
+      "step": "payment_exists",
+      "id": "b23364c1-e393-4289-9c47-3114a962493e"
+    },
+    {
+      "step": "payment_exists",
+      "id": "c885fca7-beb4-4070-bbd0-b60b3624b17a"
+    },
+    {
+      "step": "payment_exists",
+      "id": "cfbb7be8-810d-486c-85a7-3d19d0b500f6"
+    },
+    {
+      "step": "payment_exists",
+      "id": "d3ed7fd6-eb76-4dd5-9786-2db85c46b293"
+    },
+    {
+      "step": "payment_exists",
+      "id": "e07777df-6e9a-4520-8ec9-26186ca7a0e9"
+    },
+    {
+      "step": "payment_exists",
+      "id": "ee87a5e9-71ab-4fc7-8114-525659083bbe"
+    },
+    {
+      "step": "payment_exists",
+      "id": "f7a7ab0a-ff39-4021-90aa-04a8ebd4941c"
+    },
+    {
+      "step": "branch_balance_credit",
+      "branch_id": "d5fa5c2f-d3a5-4be3-8656-1ee07ce111b3",
+      "name": "ZAGUT SİGORTA ARA.HİZ.LTD.ŞTİ.",
+      "credited": 615,
+      "before": 0,
+      "after": 615
+    },
+    {
+      "step": "branch_balance_credit",
+      "branch_id": "b2c46ad4-bdbc-4e27-b7bb-148a3bf39f7a",
+      "name": "SAKİNE ŞİMŞİR ",
+      "credited": 3075,
+      "before": 385,
+      "after": 3460
+    },
+    {
+      "step": "branch_balance_credit",
+      "branch_id": "fd407512-4cf7-49e2-b55c-59fd386da260",
+      "name": "ADEM IŞIK",
+      "credited": 307.5,
+      "before": 0,
+      "after": 307.5
+    },
+    {
+      "step": "branch_balance_credit",
+      "branch_id": "d12cbc4e-be86-4fad-ba29-59f02c7c8a9a",
+      "name": "VEDAT AKBAŞ",
+      "credited": 550,
+      "before": 0,
+      "after": 550
+    },
+    {
+      "step": "agency_balance_credit",
+      "agency_id": "887d8c18-2cb7-4b01-b8fb-15a28aaac55b",
+      "name": "KARUN SİGORTA ARACILIK HİZ.LTD.ŞTİ.",
+      "credited": 490.83,
+      "before": 1395,
+      "after": 1885.83
+    },
+    {
+      "step": "agency_balance_credit",
+      "agency_id": "e1e81bfe-099d-40ff-bdb3-b58938da7a43",
+      "name": "RANA TÜZ",
+      "credited": 1024.98,
+      "before": 29433.39,
+      "after": 30458.37
+    },
+    {
+      "step": "agency_balance_credit",
+      "agency_id": "8bfea4fc-d4ca-496e-b1b3-fb225c254f0c",
+      "name": "FORBES SİGORTA ARA.HİZ.LTD.ŞTİ.",
+      "credited": 866.6700000000001,
+      "before": 0,
+      "after": 866.67
+    }
+  ]
+}

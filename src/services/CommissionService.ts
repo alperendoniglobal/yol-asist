@@ -202,6 +202,23 @@ export class CommissionService {
       .createQueryBuilder('agency')
       .select(['agency.id', 'agency.name', 'agency.balance']);
 
+    // Şube kullanıcısında özet, users.agency_id (bazen eski/yanlış) yerine
+    // şubenin gerçek agency_id'sine göre kurulmalı; aksi halde şube satırı gelmez
+    // ve dashboard "Ödenecek Komisyon" ₺0 görünür.
+    let agencyIdForSummary = filter?.agency_id as string | undefined;
+    if (
+      currentUser?.branch_id &&
+      (currentUser.role === UserRole.BRANCH_ADMIN || currentUser.role === UserRole.BRANCH_USER)
+    ) {
+      const userBranch = await this.branchRepository.findOne({
+        where: { id: currentUser.branch_id },
+        select: ['id', 'agency_id'],
+      });
+      if (userBranch?.agency_id) {
+        agencyIdForSummary = userBranch.agency_id;
+      }
+    }
+
     if (currentUser?.role === UserRole.SUPER_AGENCY_ADMIN) {
       const userAgencies = await this.userAgencyRepository.find({
         where: { user_id: currentUser.id },
@@ -212,8 +229,8 @@ export class CommissionService {
       } else {
         agencyQb.where('1 = 0');
       }
-    } else if (filter?.agency_id) {
-      agencyQb.where('agency.id = :agency_id', { agency_id: filter.agency_id });
+    } else if (agencyIdForSummary) {
+      agencyQb.where('agency.id = :agency_id', { agency_id: agencyIdForSummary });
     }
 
     const agencies = await agencyQb.getMany();

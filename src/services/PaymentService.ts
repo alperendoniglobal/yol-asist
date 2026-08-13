@@ -682,7 +682,17 @@ export class PaymentService {
           });
 
           if (existingCustomer) {
-            customer = existingCustomer;
+            // Eksik tenant alanlarını satış bağlamından doldur
+            if (!existingCustomer.agency_id && saleData.agency_id) {
+              existingCustomer.agency_id = saleData.agency_id;
+            }
+            if (!existingCustomer.branch_id && saleData.branch_id) {
+              existingCustomer.branch_id = saleData.branch_id;
+            }
+            if (!existingCustomer.created_by && saleData.user_id) {
+              existingCustomer.created_by = saleData.user_id;
+            }
+            customer = await queryRunner.manager.save(existingCustomer);
           } else {
             // Yeni müşteri oluştur (birth_date boş string ise MySQL DATE hatası önlenir)
             const bd = saleData.customer.birth_date;
@@ -699,6 +709,9 @@ export class PaymentService {
               city: saleData.customer.city,
               district: saleData.customer.district,
               address: saleData.customer.address,
+              agency_id: saleData.agency_id || null,
+              branch_id: saleData.branch_id || null,
+              created_by: saleData.user_id || null,
             });
             customer = await queryRunner.manager.save(customer);
           }
@@ -1125,7 +1138,16 @@ export class PaymentService {
           });
           
           if (existingCustomer) {
-            customer = existingCustomer;
+            if (!existingCustomer.agency_id && saleData.agency_id) {
+              existingCustomer.agency_id = saleData.agency_id;
+            }
+            if (!existingCustomer.branch_id && saleData.branch_id) {
+              existingCustomer.branch_id = saleData.branch_id;
+            }
+            if (!existingCustomer.created_by && saleData.user_id) {
+              existingCustomer.created_by = saleData.user_id;
+            }
+            customer = await queryRunner.manager.save(existingCustomer);
           } else {
             // birth_date boş string ise NULL yap (MySQL DATE boş string kabul etmez)
             const bd = saleData.customer.birth_date;
@@ -1140,6 +1162,9 @@ export class PaymentService {
               email: saleData.customer.email,
               phone: saleData.customer.phone,
               address: saleData.customer.address,
+              agency_id: saleData.agency_id || null,
+              branch_id: saleData.branch_id || null,
+              created_by: saleData.user_id || null,
             });
             customer = await queryRunner.manager.save(customer);
           }

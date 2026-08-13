@@ -16,6 +16,7 @@ router.get('/export', allRoles, saleController.export);
 router.get('/:id', saleController.getById);
 router.post('/', allRoles, saleController.create);
 router.put('/:id/dates', superAdminOnly, saleController.updateDates);
+router.put('/:id/assign', superAdminOnly, saleController.assignSeller);
 router.put('/:id', allRoles, saleController.update);
 router.delete('/:id', allRoles, saleController.delete);
 

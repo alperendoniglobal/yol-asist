@@ -1,11 +1,140 @@
 import { AppDataSource } from '../config/database';
 import { Customer } from '../entities/Customer';
 import { AppError } from '../middlewares/errorHandler';
-import { applyTenantFilter } from '../middlewares/tenantMiddleware';
-import { Like } from 'typeorm';
+import { Brackets } from 'typeorm';
 
+/**
+ * Müşteri listesi görünürlüğü:
+ * customers.agency_id / branch_id / created_by çoğu kayıtta boş kalabiliyor
+ * (mevcut müşteri yeniden kullanıldığında stamp edilmiyordu).
+ * Bu yüzden görünürlük, doğrudan müşteri kolonları VEYA sales üzerinden
+ * rol bazlı hesaplanır.
+ */
 export class CustomerService {
   private customerRepository = AppDataSource.getRepository(Customer);
+
+  /**
+   * Rol bazlı müşteri kapsamı (kayıt alanları + satış ilişkisi).
+   * SUPER_ADMIN / SUPPORT: filtre yok.
+   */
+  private applyCustomerVisibilityFilter(queryBuilder: any, filter?: any): void {
+    if (!filter?.userRole) {
+      return;
+    }
+
+    const role = filter.userRole;
+
+    if (role === 'SUPER_ADMIN' || role === 'SUPPORT') {
+      return;
+    }
+
+    if (role === 'SUPER_AGENCY_ADMIN') {
+      const managed = filter.managed_agency_ids || [];
+      if (managed.length === 0) {
+        queryBuilder.andWhere('1 = 0');
+        return;
+      }
+      queryBuilder.andWhere(
+        new Brackets((qb) => {
+          qb.where('customer.agency_id IN (:...managedAgencyIds)', {
+            managedAgencyIds: managed,
+          }).orWhere(
+            `EXISTS (
+              SELECT 1 FROM sales s
+              WHERE s.customer_id = customer.id
+                AND s.agency_id IN (:...managedAgencyIds)
+            )`
+          );
+        })
+      );
+      return;
+    }
+
+    if (role === 'AGENCY_ADMIN') {
+      if (!filter.agency_id) {
+        queryBuilder.andWhere('1 = 0');
+        return;
+      }
+      queryBuilder.andWhere(
+        new Brackets((qb) => {
+          qb.where('customer.agency_id = :agency_id', {
+            agency_id: filter.agency_id,
+          }).orWhere(
+            `EXISTS (
+              SELECT 1 FROM sales s
+              WHERE s.customer_id = customer.id
+                AND s.agency_id = :agency_id
+            )`
+          );
+        })
+      );
+      return;
+    }
+
+    if (role === 'BRANCH_ADMIN') {
+      if (filter.branch_id) {
+        // Şube yöneticisi: şubesine kayıtlı veya şubesinde satışı olan müşteriler
+        queryBuilder.andWhere(
+          new Brackets((qb) => {
+            qb.where('customer.branch_id = :branch_id', {
+              branch_id: filter.branch_id,
+            }).orWhere(
+              `EXISTS (
+                SELECT 1 FROM sales s
+                WHERE s.customer_id = customer.id
+                  AND s.branch_id = :branch_id
+              )`
+            );
+          })
+        );
+        return;
+      }
+      if (filter.agency_id) {
+        // Merkez BRANCH_ADMIN: tüm acente müşterileri
+        queryBuilder.andWhere(
+          new Brackets((qb) => {
+            qb.where('customer.agency_id = :agency_id', {
+              agency_id: filter.agency_id,
+            }).orWhere(
+              `EXISTS (
+                SELECT 1 FROM sales s
+                WHERE s.customer_id = customer.id
+                  AND s.agency_id = :agency_id
+              )`
+            );
+          })
+        );
+        return;
+      }
+      queryBuilder.andWhere('1 = 0');
+      return;
+    }
+
+    if (role === 'BRANCH_USER') {
+      // Şube/merkez çalışanı: kendi oluşturduğu veya kendi sattığı müşteriler
+      if (!filter.created_by) {
+        queryBuilder.andWhere('1 = 0');
+        return;
+      }
+      queryBuilder.andWhere(
+        new Brackets((qb) => {
+          qb.where('customer.created_by = :created_by', {
+            created_by: filter.created_by,
+          }).orWhere(
+            `EXISTS (
+              SELECT 1 FROM sales s
+              WHERE s.customer_id = customer.id
+                AND s.user_id = :created_by
+            )`
+          );
+        })
+      );
+      return;
+    }
+
+    // Bilinmeyen rol: güvenli tarafta kal
+    queryBuilder.andWhere('1 = 0');
+  }
 
   async getAll(filter?: any) {
     const queryBuilder = this.customerRepository
@@ -15,25 +144,7 @@ export class CustomerService {
       .leftJoinAndSelect('customer.created_by_user', 'user')
       .orderBy('customer.created_at', 'DESC');
 
-    if (filter) {
-      // SUPER_AGENCY_ADMIN için özel kontrol: Yönettiği brokerların ve acentelerinin müşterileri
-      if (filter.userRole === 'SUPER_AGENCY_ADMIN' && filter.managed_agency_ids) {
-        if (filter.managed_agency_ids.length > 0) {
-          // Müşteri doğrudan broker'a bağlıysa (customer.agency_id IN managed_agency_ids)
-          // VEYA müşteri bir acenteye bağlıysa ve o acentenin broker'ı yönetilen brokerlar içindeyse
-          queryBuilder.andWhere(
-            '(customer.agency_id IN (:...managedAgencyIds) OR branch.agency_id IN (:...managedAgencyIds))',
-            { managedAgencyIds: filter.managed_agency_ids }
-          );
-        } else {
-          // Hiç broker yoksa hiçbir müşteri gösterilmemeli
-          queryBuilder.andWhere('1 = 0');
-        }
-      } else {
-        // Diğer roller için standart filtreleme
-        applyTenantFilter(queryBuilder, filter, 'customer');
-      }
-    }
+    this.applyCustomerVisibilityFilter(queryBuilder, filter);
 
     const customers = await queryBuilder.getMany();
     return customers;
@@ -105,31 +216,17 @@ export class CustomerService {
       .createQueryBuilder('customer')
       .leftJoinAndSelect('customer.agency', 'agency')
       .leftJoinAndSelect('customer.branch', 'branch')
-      .where('customer.name LIKE :query', { query: `%${query}%` })
-      .orWhere('customer.surname LIKE :query', { query: `%${query}%` })
-      .orWhere('customer.tc_vkn LIKE :query', { query: `%${query}%` })
-      .orWhere('customer.phone LIKE :query', { query: `%${query}%` })
-      .orWhere('customer.email LIKE :query', { query: `%${query}%` });
+      .where(
+        new Brackets((qb) => {
+          qb.where('customer.name LIKE :query', { query: `%${query}%` })
+            .orWhere('customer.surname LIKE :query', { query: `%${query}%` })
+            .orWhere('customer.tc_vkn LIKE :query', { query: `%${query}%` })
+            .orWhere('customer.phone LIKE :query', { query: `%${query}%` })
+            .orWhere('customer.email LIKE :query', { query: `%${query}%` });
+        })
+      );
 
-    if (filter) {
-      // SUPER_AGENCY_ADMIN için özel kontrol: Yönettiği brokerların ve acentelerinin müşterileri
-      if (filter.userRole === 'SUPER_AGENCY_ADMIN' && filter.managed_agency_ids) {
-        if (filter.managed_agency_ids.length > 0) {
-          // Müşteri doğrudan broker'a bağlıysa (customer.agency_id IN managed_agency_ids)
-          // VEYA müşteri bir acenteye bağlıysa ve o acentenin broker'ı yönetilen brokerlar içindeyse
-          queryBuilder.andWhere(
-            '(customer.agency_id IN (:...managedAgencyIds) OR branch.agency_id IN (:...managedAgencyIds))',
-            { managedAgencyIds: filter.managed_agency_ids }
-          );
-        } else {
-          // Hiç broker yoksa hiçbir müşteri gösterilmemeli
-          queryBuilder.andWhere('1 = 0');
-        }
-      } else {
-        // Diğer roller için standart filtreleme
-        applyTenantFilter(queryBuilder, filter, 'customer');
-      }
-    }
+    this.applyCustomerVisibilityFilter(queryBuilder, filter);
 
     const customers = await queryBuilder.take(20).getMany();
     return customers;
@@ -149,25 +246,7 @@ export class CustomerService {
       .leftJoinAndSelect('sales.vehicle', 'saleVehicle')
       .where('customer.tc_vkn = :tcVkn', { tcVkn });
 
-    if (filter) {
-      // SUPER_AGENCY_ADMIN için özel kontrol: Yönettiği brokerların ve acentelerinin müşterileri
-      if (filter.userRole === 'SUPER_AGENCY_ADMIN' && filter.managed_agency_ids) {
-        if (filter.managed_agency_ids.length > 0) {
-          // Müşteri doğrudan broker'a bağlıysa (customer.agency_id IN managed_agency_ids)
-          // VEYA müşteri bir acenteye bağlıysa ve o acentenin broker'ı yönetilen brokerlar içindeyse
-          queryBuilder.andWhere(
-            '(customer.agency_id IN (:...managedAgencyIds) OR branch.agency_id IN (:...managedAgencyIds))',
-            { managedAgencyIds: filter.managed_agency_ids }
-          );
-        } else {
-          // Hiç broker yoksa hiçbir müşteri gösterilmemeli
-          queryBuilder.andWhere('1 = 0');
-        }
-      } else {
-        // Diğer roller için standart filtreleme
-        applyTenantFilter(queryBuilder, filter, 'customer');
-      }
-    }
+    this.applyCustomerVisibilityFilter(queryBuilder, filter);
 
     const customer = await queryBuilder.getOne();
     return customer;

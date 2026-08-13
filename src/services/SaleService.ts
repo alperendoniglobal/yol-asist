@@ -6,6 +6,7 @@ import { Customer } from '../entities/Customer';
 import { Vehicle } from '../entities/Vehicle';
 import { Payment } from '../entities/Payment';
 import { Package } from '../entities/Package';
+import { User } from '../entities/User';
 import { AppError } from '../middlewares/errorHandler';
 import { applyTenantFilter } from '../middlewares/tenantMiddleware';
 import { PaymentType, PaymentStatus, UsageType, UserRole } from '../types/enums';
@@ -82,6 +83,7 @@ export class SaleService {
   private vehicleRepository = AppDataSource.getRepository(Vehicle);
   private paymentRepository = AppDataSource.getRepository(Payment);
   private packageRepository = AppDataSource.getRepository(Package);
+  private userRepository = AppDataSource.getRepository(User);
   private vehicleService = new VehicleService();
 
   /** KDV oranı (%20) - İade hesaplarında kullanılır */
@@ -451,6 +453,162 @@ export class SaleService {
     return sale;
   }
 
+  /**
+   * Super Admin: satışı başka kullanıcıya ata.
+   * Hedef kullanıcının agency_id / branch_id'si satışa yazılır; komisyon yeni oranlarla yeniden hesaplanır.
+   * PayTR (komisyonlu) satışlarda eski cüzdanlardan düşülüp yeni cüzdanlara eklenir.
+   */
+  async assignSeller(id: string, newUserId: string) {
+    if (!newUserId?.trim()) {
+      throw new AppError(400, 'Yeni satıcı kullanıcı ID zorunludur');
+    }
+
+    const queryRunner = AppDataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const sale = await queryRunner.manager.findOne(Sale, {
+        where: { id },
+        relations: ['payments'],
+      });
+
+      if (!sale) {
+        throw new AppError(404, 'Satış bulunamadı');
+      }
+
+      if (sale.is_refunded) {
+        throw new AppError(400, 'İade edilmiş satış yeniden atanamaz');
+      }
+
+      const newUser = await queryRunner.manager.findOne(User, {
+        where: { id: newUserId },
+        relations: ['agency', 'branch'],
+      });
+
+      if (!newUser) {
+        throw new AppError(404, 'Hedef kullanıcı bulunamadı');
+      }
+
+      if (newUser.is_deleted) {
+        throw new AppError(400, 'Silinmiş kullanıcıya satış atanamaz');
+      }
+
+      if (sale.user_id === newUser.id
+        && sale.agency_id === (newUser.agency_id || null)
+        && sale.branch_id === (newUser.branch_id || null)) {
+        throw new AppError(400, 'Satış zaten bu kullanıcıya ait');
+      }
+
+      const oldAgencyId = sale.agency_id;
+      const oldBranchId = sale.branch_id;
+      const oldBranchCommission = parseFloat(sale.branch_commission?.toString() || '0') || 0;
+      const oldAgencyCommission = parseFloat(sale.agency_commission?.toString() || '0') || 0;
+
+      const payment = (sale.payments || []).find(
+        (p) => p.status === PaymentStatus.COMPLETED || p.status === PaymentStatus.PENDING
+      ) || (sale.payments || [])[0];
+
+      const isBalancePaid = payment?.type === PaymentType.BALANCE;
+      const shouldMoveCommission =
+        !isBalancePaid
+        && payment?.status === PaymentStatus.COMPLETED
+        && (oldBranchCommission > 0 || oldAgencyCommission > 0);
+
+      // Eski cüzdanlardan komisyon düş
+      if (shouldMoveCommission) {
+        if (oldBranchId && oldBranchCommission > 0) {
+          const oldBranch = await queryRunner.manager.findOne(Branch, { where: { id: oldBranchId } });
+          if (oldBranch) {
+            const bal = parseFloat(oldBranch.balance?.toString() || '0') || 0;
+            oldBranch.balance = bal - oldBranchCommission;
+            await queryRunner.manager.save(oldBranch);
+          }
+        }
+        if (oldAgencyId && oldAgencyCommission > 0) {
+          const oldAgency = await queryRunner.manager.findOne(Agency, { where: { id: oldAgencyId } });
+          if (oldAgency) {
+            const bal = parseFloat(oldAgency.balance?.toString() || '0') || 0;
+            oldAgency.balance = bal - oldAgencyCommission;
+            await queryRunner.manager.save(oldAgency);
+          }
+        }
+      }
+
+      const newAgencyId = newUser.agency_id || null;
+      const newBranchId = newUser.branch_id || null;
+
+      let branchCommission: number | null = null;
+      let agencyCommission: number | null = null;
+      let totalCommission = 0;
+
+      if (isBalancePaid) {
+        // Bakiye ile ödemede komisyon yok
+        branchCommission = null;
+        agencyCommission = null;
+        totalCommission = 0;
+      } else {
+        const distributed = await this.calculateDistributedCommission(
+          Number(sale.price),
+          newBranchId,
+          newAgencyId
+        );
+        branchCommission = distributed.branch_commission;
+        agencyCommission = distributed.agency_commission;
+        totalCommission = distributed.total_commission;
+      }
+
+      sale.user_id = newUser.id;
+      sale.agency_id = newAgencyId;
+      sale.branch_id = newBranchId;
+      sale.branch_commission = branchCommission as any;
+      sale.agency_commission = agencyCommission as any;
+      sale.commission = totalCommission as any;
+      await queryRunner.manager.save(sale);
+
+      // Yeni cüzdanlara komisyon ekle
+      if (!isBalancePaid && payment?.status === PaymentStatus.COMPLETED) {
+        const newBranchComm = parseFloat(String(branchCommission || 0)) || 0;
+        const newAgencyComm = parseFloat(String(agencyCommission || 0)) || 0;
+
+        if (newBranchId && newBranchComm > 0) {
+          const newBranch = await queryRunner.manager.findOne(Branch, { where: { id: newBranchId } });
+          if (newBranch) {
+            const bal = parseFloat(newBranch.balance?.toString() || '0') || 0;
+            newBranch.balance = bal + newBranchComm;
+            await queryRunner.manager.save(newBranch);
+          }
+        }
+        if (newAgencyId && newAgencyComm > 0) {
+          const newAgency = await queryRunner.manager.findOne(Agency, { where: { id: newAgencyId } });
+          if (newAgency) {
+            const bal = parseFloat(newAgency.balance?.toString() || '0') || 0;
+            newAgency.balance = bal + newAgencyComm;
+            await queryRunner.manager.save(newAgency);
+          }
+        }
+      }
+
+      // Ödeme kaydındaki agency_id'yi de güncelle
+      if (payment) {
+        payment.agency_id = newAgencyId;
+        await queryRunner.manager.save(payment);
+      }
+
+      await queryRunner.commitTransaction();
+
+      return await this.saleRepository.findOne({
+        where: { id },
+        relations: ['customer', 'vehicle', 'package', 'agency', 'branch', 'user', 'payments'],
+      });
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
   // Satış sil
   async delete(id: string) {
     const sale = await this.saleRepository.findOne({ where: { id } });
@@ -604,6 +762,17 @@ export class SaleService {
           district: sanitizedData.district,
           address: sanitizedData.address,
         });
+
+        // Eksik tenant alanlarını satış bağlamından doldur (liste filtresi için kritik)
+        if (!existingCustomer.agency_id && input.agency_id) {
+          existingCustomer.agency_id = input.agency_id;
+        }
+        if (!existingCustomer.branch_id && input.branch_id) {
+          existingCustomer.branch_id = input.branch_id;
+        }
+        if (!existingCustomer.created_by && input.user_id) {
+          existingCustomer.created_by = input.user_id;
+        }
         
         customer = await queryRunner.manager.save(existingCustomer);
       } else {
