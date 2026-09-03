@@ -52,3 +52,19 @@ export enum TicketStatus {
   RESOLVED = 'RESOLVED',
   CLOSED = 'CLOSED'
 }
+
+// commission_balance_ledger tablosu için: bakiye hareketinin hangi taraf (broker/acente) için olduğu
+export enum CommissionLedgerEntityType {
+  AGENCY = 'agency',
+  BRANCH = 'branch'
+}
+
+// commission_balance_ledger tablosu için: bakiye hareketinin sebebi
+export enum CommissionLedgerReason {
+  SALE_CREDIT = 'SALE_CREDIT',
+  COMMISSION_PAID = 'COMMISSION_PAID',
+  BALANCE_SALE = 'BALANCE_SALE',
+  REFUND = 'REFUND',
+  TRANSFER = 'TRANSFER',
+  ADJUSTMENT = 'ADJUSTMENT'
+}
