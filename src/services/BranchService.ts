@@ -104,13 +104,15 @@ export class BranchService {
       .getMany();
 
     // Subenin satis istatistikleri
+    // NOT: total_commission şubenin KENDİ payıdır (branch_commission). sale.commission
+    // acente + broker payının toplamıdır; şubeye onu göstermek broker payını da içine katar.
     const salesStats = await this.saleRepository
       .createQueryBuilder('sale')
       .where('sale.branch_id = :branchId', { branchId: id })
       .select([
         'COUNT(sale.id) as total_sales',
         'SUM(sale.price) as total_revenue',
-        'SUM(sale.commission) as total_commission',
+        'SUM(COALESCE(sale.branch_commission, 0)) as total_commission',
       ])
       .getRawOne();
 

@@ -11,6 +11,7 @@ import { AppError } from '../middlewares/errorHandler';
 import { applyTenantFilter } from '../middlewares/tenantMiddleware';
 import { PaymentType, PaymentStatus, UsageType, UserRole } from '../types/enums';
 import { resolvePolicyDates, normalizeToYmd, addYearsYmd } from '../utils/policyDates';
+import { toNetPrice, calculateCommissionAmount } from '../utils/commission';
 import { SmsService } from './SmsService';
 import { VehicleService } from './VehicleService';
 
@@ -284,19 +285,19 @@ export class SaleService {
 
   /**
    * Komisyon tutarını hesaplar.
-   * KDV dahil satış fiyatı üzerinden: 1000 TL × %30 = 300 TL.
+   * KDV hariç net fiyat üzerinden: 1000 TL (KDV dahil) → 833,33 TL net × %30 = 250 TL.
    * @param price - KDV dahil satış fiyatı (TL)
    * @param commissionRate - Komisyon oranı (%)
    * @returns Komisyon tutarı (TL)
    */
   calculateCommission(price: number, commissionRate: number): number {
-    return (price * commissionRate) / 100;
+    return calculateCommissionAmount(price, commissionRate);
   }
 
   /**
    * Dağılımlı komisyon hesaplar.
-   * Komisyon KDV dahil satış fiyatı üzerinden: fiyat × oran / 100.
-   * Şube varsa: Şube kendi komisyonunu alır, kalan kısım acenteye gider. Şube yoksa: Sadece acente komisyonu.
+   * Komisyon KDV hariç net fiyat üzerinden: net fiyat × oran / 100 (net fiyat = fiyat / 1.20).
+   * Şube varsa: Şube kendi oranını, acente aradaki farkı (agencyRate - branchRate) alır. Şube yoksa: Sadece acente komisyonu.
    * @param price - KDV dahil satış fiyatı (TL)
    * @param branchId - Şube ID (opsiyonel)
    * @param agencyId - Acente ID (opsiyonel)
@@ -311,6 +312,8 @@ export class SaleService {
     agency_commission: number | null;
     total_commission: number;
   }> {
+    const netPrice = toNetPrice(price);
+
     // 1. Şube varsa: Dağılımlı komisyon hesapla
     if (branchId) {
       const branch = await this.branchRepository.findOne({ where: { id: branchId } });
@@ -336,9 +339,9 @@ export class SaleService {
         throw new AppError(400, `Şube komisyon oranı (${branchRate}%) acente komisyon oranından (${agencyRate}%) fazla olamaz`);
       }
 
-      const branchCommission = (price * branchRate) / 100;
-      const agencyCommission = (price * (agencyRate - branchRate)) / 100;
-      const totalCommission = (price * agencyRate) / 100;
+      const branchCommission = (netPrice * branchRate) / 100;
+      const agencyCommission = (netPrice * (agencyRate - branchRate)) / 100;
+      const totalCommission = (netPrice * agencyRate) / 100;
 
       return {
         branch_commission: branchCommission,
@@ -355,7 +358,7 @@ export class SaleService {
       }
 
       const agencyRate = Number(agency.commission_rate);
-      const agencyCommission = (price * agencyRate) / 100;
+      const agencyCommission = (netPrice * agencyRate) / 100;
 
       return {
         branch_commission: null,
@@ -364,9 +367,9 @@ export class SaleService {
       };
     }
 
-    // 3. İkisi de yoksa: Varsayılan %20 (KDV dahil fiyat üzerinden)
+    // 3. İkisi de yoksa: Varsayılan %20 (KDV hariç net fiyat üzerinden)
     const defaultRate = 20;
-    const defaultCommission = (price * defaultRate) / 100;
+    const defaultCommission = (netPrice * defaultRate) / 100;
 
     return {
       branch_commission: null,
@@ -377,15 +380,17 @@ export class SaleService {
 
   // Yeni satış oluştur
   async create(data: Partial<Sale>) {
-    // Dağılımlı komisyon hesapla (eğer hesaplanmamışsa)
-    if (data.price && (data.branch_commission === undefined || data.agency_commission === undefined || data.commission === undefined)) {
+    // Komisyon HER ZAMAN backend'de hesaplanır. Dışarıdan (frontend, script, entegrasyon)
+    // gelen branch_commission/agency_commission/commission değerleri kullanılmaz — bunlar
+    // yanlış (ör. KDV düşülmeden hesaplanmış) olabilir. KDV hatası tekrarlanmasın diye
+    // tek doğru kaynak burasıdır: calculateDistributedCommission.
+    if (data.price) {
       const distributedCommission = await this.calculateDistributedCommission(
         Number(data.price),
         data.branch_id || null,
         data.agency_id || null
       );
 
-      // Dağılımlı komisyon değerlerini set et
       data.branch_commission = distributedCommission.branch_commission;
       data.agency_commission = distributedCommission.agency_commission;
       data.commission = distributedCommission.total_commission;
@@ -409,7 +414,27 @@ export class SaleService {
       throw new AppError(404, 'Satış bulunamadı');
     }
 
-    Object.assign(sale, data);
+    // Komisyon alanlarına dışarıdan gelen değerler kabul edilmez — price, branch_id veya
+    // agency_id değişiyorsa (ya da komisyon alanlarına elle müdahale edilmeye çalışılıyorsa)
+    // komisyon backend'de yeniden hesaplanır. Tek doğru kaynak: calculateDistributedCommission.
+    const { branch_commission, agency_commission, commission, ...rest } = data;
+    Object.assign(sale, rest);
+
+    const priceChanged = data.price !== undefined && Number(data.price) !== Number(sale.price);
+    const tenantChanged = data.branch_id !== undefined || data.agency_id !== undefined;
+    const commissionFieldsProvided = branch_commission !== undefined || agency_commission !== undefined || commission !== undefined;
+
+    if (priceChanged || tenantChanged || commissionFieldsProvided) {
+      const distributed = await this.calculateDistributedCommission(
+        Number(sale.price),
+        sale.branch_id || null,
+        sale.agency_id || null
+      );
+      sale.branch_commission = distributed.branch_commission as any;
+      sale.agency_commission = distributed.agency_commission as any;
+      sale.commission = distributed.total_commission as any;
+    }
+
     await this.saleRepository.save(sale);
     return sale;
   }
@@ -924,8 +949,9 @@ export class SaleService {
         branchCommission = distributedCommission.branch_commission;
         agencyCommission = distributedCommission.agency_commission;
         totalCommission = distributedCommission.total_commission;
-      } else if (input.sale.commission === undefined) {
-        // Acente satışı (şube yok), komisyon hesaplanmamışsa hesapla
+      } else {
+        // Acente satışı (şube yok): her zaman backend'de hesaplanır.
+        // Frontend'den gelen commission kullanılmaz (bkz. şube satışındaki not).
         const distributedCommission = await this.calculateDistributedCommission(
           Number(input.sale.price),
           null,
@@ -934,11 +960,6 @@ export class SaleService {
         branchCommission = distributedCommission.branch_commission;
         agencyCommission = distributedCommission.agency_commission;
         totalCommission = distributedCommission.total_commission;
-      } else {
-        // Sadece acente satışı ve frontend komisyon göndermişse kullan (şube yok)
-        totalCommission = input.sale.commission;
-        agencyCommission = input.sale.commission;
-        branchCommission = null;
       }
 
       // 4. ÖDEME İŞLEMİ - PayTR için önce kontrol et, hiçbir kayıt oluşturma

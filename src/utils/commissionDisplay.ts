@@ -72,13 +72,21 @@ const BALANCE_PAYMENT_EXISTS = `EXISTS (
     AND p.status = :completedStatus
 )`;
 
-/** Yalnızca ilk dönemdeki az sayıdaki farklı kayıt (çoğunlukla KDV hariç kayıtlardan ayrılan satışlar). */
-const BRANCH_EARLY_ANOMALY = `(
+/**
+ * Kayıtlı komisyon (branch_commission/agency_commission/commission), satış anındaki fiyat VE
+ * satış anındaki komisyon oranı ile hesaplanıp saklanmıştır — oranlar zaman içinde değiştiği için
+ * (satışta kilitlenir), TABLODAKİ ŞİMDİKİ ORANLA yeniden hesaplamak YANLIŞ sonuç üretir.
+ * Bu yüzden "kazanılan komisyon" için tek doğru kaynak, satırın kendi kayıtlı değeridir.
+ * Buradaki fonksiyonlar artık yeniden hesaplama YAPMAZ; sadece kayıtlı toplamı döner ve
+ * (varsa) hâlâ eski/KDV-dahil formülle hesaplanmış kalıntı kayıtları "mismatch" olarak işaretler
+ * — bu sayaç sıfır olmalıdır; sıfır değilse Bölüm "geçmiş satış düzeltmesi" tekrar çalıştırılmalıdır.
+ */
+const BRANCH_LEGACY_VAT_INCLUSIVE = `(
   ABS(COALESCE(sale.branch_commission, 0) - ROUND(sale.price * branch.commission_rate / 100, 2)) < 0.02
   AND ABS(COALESCE(sale.branch_commission, 0) - ROUND((sale.price / 1.20) * branch.commission_rate / 100, 2)) >= 0.02
 )`;
 
-const AGENCY_EARLY_ANOMALY = `(
+const AGENCY_LEGACY_VAT_INCLUSIVE = `(
   sale.branch_id IS NOT NULL AND ABS(
     COALESCE(sale.agency_commission, 0) - ROUND(sale.price * (agency.commission_rate - branch.commission_rate) / 100, 2)
   ) < 0.02 AND ABS(
@@ -119,7 +127,7 @@ function applySaleTenantFilter(
   }
 }
 
-/** KDV dahil satış fiyatı üzerinden komisyon (bakiye ile ödemede 0). */
+/** Kayıtlı komisyon toplamı (bakiye ile ödemede 0 sayılır — komisyon kesilmez). */
 export async function getCommissionDisplayMetrics(
   saleRepository: Repository<Sale>,
   filter: Record<string, unknown> | undefined,
@@ -142,7 +150,7 @@ export async function getCommissionDisplayMetrics(
       .select(
         `COALESCE(SUM(
           CASE WHEN ${BALANCE_PAYMENT_EXISTS} THEN 0
-          ELSE ROUND(sale.price * branch.commission_rate / 100, 2)
+          ELSE COALESCE(sale.branch_commission, 0)
           END
         ), 0)`,
         'displayTotal'
@@ -151,7 +159,7 @@ export async function getCommissionDisplayMetrics(
       .addSelect(
         `COALESCE(SUM(
           CASE WHEN ${BALANCE_PAYMENT_EXISTS} THEN 0
-          WHEN ${BRANCH_EARLY_ANOMALY}
+          WHEN ${BRANCH_LEGACY_VAT_INCLUSIVE}
           THEN 1 ELSE 0 END
         ), 0)`,
         'mismatchCount'
@@ -170,9 +178,7 @@ export async function getCommissionDisplayMetrics(
       .select(
         `COALESCE(SUM(
           CASE WHEN ${BALANCE_PAYMENT_EXISTS} THEN 0
-          WHEN sale.branch_id IS NOT NULL
-            THEN ROUND(sale.price * (agency.commission_rate - branch.commission_rate) / 100, 2)
-          ELSE ROUND(sale.price * agency.commission_rate / 100, 2)
+          ELSE COALESCE(sale.agency_commission, sale.commission, 0)
           END
         ), 0)`,
         'displayTotal'
@@ -184,7 +190,7 @@ export async function getCommissionDisplayMetrics(
       .addSelect(
         `COALESCE(SUM(
           CASE WHEN ${BALANCE_PAYMENT_EXISTS} THEN 0
-          WHEN ${AGENCY_EARLY_ANOMALY}
+          WHEN ${AGENCY_LEGACY_VAT_INCLUSIVE}
           THEN 1 ELSE 0 END
         ), 0)`,
         'mismatchCount'
@@ -201,7 +207,7 @@ export async function getCommissionDisplayMetrics(
     .select(
       `COALESCE(SUM(
         CASE WHEN ${BALANCE_PAYMENT_EXISTS} THEN 0
-        ELSE ROUND(sale.price * agency.commission_rate / 100, 2)
+        ELSE COALESCE(sale.commission, 0)
         END
       ), 0)`,
       'displayTotal'
@@ -221,7 +227,7 @@ export async function getCommissionDisplayMetrics(
   return parseRow(await qb.getRawOne());
 }
 
-/** Şube veya acente satırı için KDV dahil kazanılan komisyon. */
+/** Şube veya acente satırı için kayıtlı komisyon toplamı. */
 export async function getBranchRowDisplayEarned(
   saleRepository: Repository<Sale>,
   branchId: string
@@ -232,7 +238,7 @@ export async function getBranchRowDisplayEarned(
     .select(
       `COALESCE(SUM(
         CASE WHEN ${BALANCE_PAYMENT_EXISTS} THEN 0
-        ELSE ROUND(sale.price * branch.commission_rate / 100, 2)
+        ELSE COALESCE(sale.branch_commission, 0)
         END
       ), 0)`,
       'displayTotal'
@@ -240,7 +246,7 @@ export async function getBranchRowDisplayEarned(
     .addSelect(
       `COALESCE(SUM(
         CASE WHEN ${BALANCE_PAYMENT_EXISTS} THEN 0
-        WHEN ${BRANCH_EARLY_ANOMALY}
+        WHEN ${BRANCH_LEGACY_VAT_INCLUSIVE}
         THEN 1 ELSE 0 END
       ), 0)`,
       'mismatchCount'
@@ -269,9 +275,7 @@ export async function getAgencyRowDisplayEarned(
     .select(
       `COALESCE(SUM(
         CASE WHEN ${BALANCE_PAYMENT_EXISTS} THEN 0
-        WHEN sale.branch_id IS NOT NULL
-          THEN ROUND(sale.price * (agency.commission_rate - branch.commission_rate) / 100, 2)
-        ELSE ROUND(sale.price * agency.commission_rate / 100, 2)
+        ELSE COALESCE(sale.agency_commission, sale.commission, 0)
         END
       ), 0)`,
       'displayTotal'
@@ -279,7 +283,7 @@ export async function getAgencyRowDisplayEarned(
     .addSelect(
       `COALESCE(SUM(
         CASE WHEN ${BALANCE_PAYMENT_EXISTS} THEN 0
-        WHEN ${AGENCY_EARLY_ANOMALY}
+        WHEN ${AGENCY_LEGACY_VAT_INCLUSIVE}
         THEN 1 ELSE 0 END
       ), 0)`,
       'mismatchCount'

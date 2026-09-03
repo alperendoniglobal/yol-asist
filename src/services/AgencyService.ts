@@ -148,9 +148,11 @@ export class AgencyService {
       .where('sale.agency_id = :agencyId', { agencyId })
       .getRawOne();
 
+    // NOT: Brokerin KENDİ payı agency_commission'dır. sale.commission, şube varsa
+    // şube+broker payının toplamıdır; brokere onu göstermek şube payını da içine katar.
     const totalCommission = await this.saleRepository
       .createQueryBuilder('sale')
-      .select('SUM(sale.commission)', 'total')
+      .select('SUM(COALESCE(sale.agency_commission, sale.commission, 0))', 'total')
       .where('sale.agency_id = :agencyId', { agencyId })
       .getRawOne();
 

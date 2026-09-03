@@ -9,8 +9,10 @@ import { UserAgency } from '../entities/UserAgency';
  * - SUPPORT: No filter (can see all data - global support role)
  * - SUPER_AGENCY_ADMIN: Filter by selected agency_id (can manage multiple agencies)
  * - AGENCY_ADMIN: Filter by agency_id
- * - BRANCH_ADMIN: Filter by agency_id + branch_id
- * - BRANCH_USER: Filter by agency_id + branch_id + created_by
+ * - BRANCH_ADMIN: Filter by branch_id (agency_id ayrıca hesaplanır ama branch_id varken
+ *   sorgularda kullanılmaz — bkz. applyTenantFilter, bir şube brokerini değiştirse bile
+ *   geçmiş satışları görünür kalsın diye)
+ * - BRANCH_USER: Filter by branch_id + created_by (agency_id için aynı not geçerli)
  */
 export const tenantMiddleware = async (
   req: Request,
@@ -146,8 +148,11 @@ export const applyTenantFilter = (
       return;
     }
 
-    // Agency filtresi uygula
-    if (filter.agency_id) {
+    // Agency filtresi SADECE branch_id yoksa uygulanır. Bir şube zaten tek bir tenant sınırıdır;
+    // şube başka bir brokere devredilirse geçmiş satışların agency_id'si (satış anındaki broker)
+    // güncellenmeyebilir. Branch kullanıcısı, brokeri kaç kez değişmiş olursa olsun kendi
+    // şubesindeki TÜM satışları görmeli — bu yüzden branch_id varken agency_id şartını uygulamıyoruz.
+    if (filter.agency_id && !filter.branch_id) {
       queryBuilder.andWhere(`${alias}.agency_id = :agency_id`, {
         agency_id: filter.agency_id,
       });
